@@ -79,8 +79,8 @@ export function addField(parent, map, key, label, value, options) {
     const f = field(label, value, options);if(HELP[key]){f.input.title=HELP[key];f.wrap.title=HELP[key];}map[key] = f; parent.append(f.wrap); return f.input;
 }
 export function readFields(map) { return Object.fromEntries(Object.entries(map).map(([key, f]) => [key, f.read()])); }
-export function confirmAction(title,message){
-    return new Promise(resolve=>{const {dialog,body}=modal(title);body.append(el('p','',message));const footer=el('footer','ap2-footer');footer.append(button('취소',()=>dialog.close()),button('삭제',()=>{dialog.returnValue='delete';dialog.close();},true));dialog.append(footer);dialog.addEventListener('close',()=>resolve(dialog.returnValue==='delete'),{once:true});footer.querySelector('button').focus();});
+export function confirmAction(title,message,confirmLabel='삭제'){
+    return new Promise(resolve=>{const {dialog,body}=modal(title);body.append(el('p','',message));const footer=el('footer','ap2-footer');footer.append(button('취소',()=>dialog.close()),button(confirmLabel,()=>{dialog.returnValue='confirm';dialog.close();},true));dialog.append(footer);dialog.addEventListener('close',()=>resolve(dialog.returnValue==='confirm'),{once:true});footer.querySelector('button').focus();});
 }
 function settingGroup(parent,title,collapsed=false){
     const group=el(collapsed?'details':'fieldset','ap2-group');
@@ -124,12 +124,12 @@ export function studio(api,host=null) {
     const nav = el('nav', 'ap2-tabs'), pages = el('div','ap2-pages');nav.setAttribute('aria-label','씬북 설정');nav.setAttribute('role','tablist');
     body.append(connection,workflow,quick,nav,pages);
     const tabs = [ ['generation', '생성','fa-sliders'], ['characters', '인물','fa-user'], ['references','참조','fa-images'], ['gallery', '갤러리','fa-film'], ['queue', '작업','fa-list-check'] ];
-    const cached=new Map(),instanceId=`ap2-${crypto.randomUUID()}`;let activeId='generation';
+    const cached=new Map(),instanceId=`ap2-${crypto.randomUUID()}`;let activeId='generation',characterScope=null;
     const open = async (id,refresh=false) => {
         activeId=id;
         nav.querySelectorAll('button').forEach(b => {const active=b.dataset.page===id;b.setAttribute('aria-selected',String(active));b.tabIndex=active?0:-1;});
         for(const p of pages.children)p.hidden=true;
-        if(cached.has(id)&&!refresh&&!cached.get(id).dataset.failed&&['generation','characters','references'].includes(id)){cached.get(id).hidden=false;return;}
+        if(cached.has(id)&&!refresh&&!cached.get(id).dataset.failed&&['generation','characters','references'].includes(id)&&(id!=='characters'||cached.get(id).dataset.contextKey===api.contextKey())){cached.get(id).hidden=false;return;}
         cached.get(id)?.remove();const page=el('section','ap2-page');page.id=`${instanceId}-page-${id}`;page.setAttribute('role','tabpanel');page.setAttribute('aria-labelledby',`${instanceId}-tab-${id}`);pages.append(page);cached.set(id,page);
         if (id === 'generation') {
             const c=api.settings(),fields={};
@@ -188,17 +188,30 @@ export function studio(api,host=null) {
             upload.addEventListener('change',async()=>{try{const file=upload.files[0];if(!file)return;if(file.size>1000000)throw new Error('1MB 이하 설정 파일을 선택하세요.');api.importSettings(JSON.parse(await file.text()));await open('generation',true);notice('설정을 가져왔습니다. 자동 생성은 꺼져 있습니다.');}catch(e){notice(e.message,true);}});
         }
         if(id==='characters') {
-            const c=api.visualSettings(), fields={},contextKey=api.contextKey();
-            const toolbar=el('div','ap2-actions');toolbar.append(button('인물 추가',()=>{remember();drafts.push({id:crypto.randomUUID(),name:'',appearance:'',outfit:'',negative:''});render();page.dispatchEvent(new Event('input'));},false,'fa-plus'),button('캐릭터 가져오기',()=>{const ch=api.character();if(!ch)throw new Error('현재 캐릭터가 없습니다.');remember();drafts.push({id:crypto.randomUUID(),name:ch.name??'',appearance:ch.description??ch.data?.description??'',outfit:'',negative:''});render();page.dispatchEvent(new Event('input'));notice('캐릭터 설명을 가져왔습니다. 외형 묘사를 확인하세요.');},false,'fa-user-plus'));page.append(toolbar);
-            const scopeChoice=field('저장 범위',api.hasVisualOverride()?'chat':'account',{choices:[['chat','현재 채팅만'],['account','계정 기본값']]});page.append(scopeChoice.wrap);
+            const choices=[['account','계정 전체'],...(api.visualCharacterKey()?[['character','현재 캐릭터']]:[]),...(api.hasChat()?[['chat','현재 채팅']]:[])];
+            if(!choices.some(([where])=>where===characterScope))characterScope=api.visualScope();
+            const editingScope=characterScope,c=api.visualSettings(editingScope),fields={},contextKey=api.contextKey();page.dataset.contextKey=contextKey;
+            const toolbar=el('div','ap2-actions');toolbar.append(button('인물 추가',()=>{remember();drafts.push({id:crypto.randomUUID(),name:'',appearance:'',outfit:'',negative:''});render(true);},false,'fa-plus'),button('캐릭터 가져오기',()=>{const ch=api.character();if(!ch)throw new Error('현재 캐릭터가 없습니다.');remember();drafts.push({id:crypto.randomUUID(),name:ch.name??'',appearance:ch.description??ch.data?.description??'',outfit:'',negative:''});render(true);notice('캐릭터 설명을 가져왔습니다. 외형 묘사를 확인하세요.');},false,'fa-user-plus'));
+            const scopeChoice=field('저장 범위',editingScope,{choices}),scopeHelp=el('p','ap2-muted');page.append(scopeChoice.wrap,scopeHelp,toolbar);
+            // Selecting a layer reads it; it must never copy the previous layer
+            // into the new destination through the automatic input save handler.
+            scopeChoice.input.addEventListener('input',event=>event.stopPropagation());
+            scopeChoice.input.addEventListener('change',async event=>{
+                event.stopPropagation();const next=scopeChoice.read();scopeChoice.input.value=editingScope;scopeChoice.input.disabled=true;
+                try{
+                    if(page.dataset.dirty==='true'&&!await confirmAction('범위 변경','저장되지 않은 입력을 버리고 다른 범위를 열까요?','전환'))return;
+                    if(contextKey!==api.contextKey()||!page.isConnected)return;
+                    characterScope=next;await open('characters',true);
+                }catch(error){notice(error.message,true);}finally{scopeChoice.input.disabled=false;}
+            });
             const world=settingGroup(page,'세계관 · 연출',true);
             addField(world,fields,'world','세계관',c.world,{multiline:true,help:'시대·건축·문화권의 기본값. 본문에 명시된 사실을 우선합니다.'});
             addField(world,fields,'direction','연출 지시',c.direction,{multiline:true});
             addField(world,fields,'playerMode','플레이어',c.playerMode,{choices:[['auto','본문에 따라 판단'],['pov','화면 밖 · POV'],['visible','등장 가능']]});
             const list=el('div','ap2-stack'); page.append(list);
-            let drafts=structuredClone(c.library);const history=[];const remember=()=>{history.push(structuredClone(drafts));if(history.length>20)history.shift();page.dispatchEvent(new Event('input'));};
-            const undo=button('되돌리기',()=>{if(!history.length)return;drafts=history.pop();render();page.dispatchEvent(new Event('input'));});toolbar.append(undo);
-            const render=()=>{undo.disabled=!history.length;list.replaceChildren();if(!drafts.length)list.append(el('p','ap2-empty','등록한 인물이 없습니다.'));for(const [i,item]of drafts.entries()){
+            let drafts=structuredClone(c.library);const history=[];const remember=()=>{history.push(structuredClone(drafts));if(history.length>20)history.shift();};
+            const undo=button('되돌리기',()=>{if(!history.length)return;drafts=history.pop();render(true);});toolbar.append(undo);
+            const render=(save=false)=>{undo.disabled=!history.length;list.replaceChildren();if(!drafts.length)list.append(el('p','ap2-empty','등록한 인물이 없습니다.'));for(const [i,item]of drafts.entries()){
                 const card=el('details','ap2-character'), f={};card.open=drafts.length===1||!item.name;const title=el('summary','',item.name||'새 인물');card.append(title);
                 for(const [key,label,multi]of [['name','이름',false],['appearance','고정 외형',true],['outfit','기본 복장',true],['negative','인물 제외 요소',true]])addField(card,f,key,label,item[key]??'',{multiline:multi});
                 addField(card,f,'player','플레이어 캐릭터',item.player,{type:'checkbox'});
@@ -209,13 +222,34 @@ export function studio(api,host=null) {
                     const row=el('div','ap2-card'),pf={};
                     for(const [key,label]of [['name','프로필 이름'],['condition','이 외형을 쓰는 조건'],['appearance','이 외형의 고정 특징'],['outfit','이 외형의 기본 복장']])addField(row,pf,key,label,profile[key]??'',{multiline:key!=='name'});
                     row.addEventListener('input',()=>Object.assign(profile,readFields(pf)));
-                    row.append(button('삭제',async()=>{if(!await confirmAction('외형 삭제',`“${profile.name||'이 외형'}”을 삭제할까요?`))return;remember();item.profiles.splice(pi,1);render();}));variants.append(row);
+                    row.append(button('삭제',async()=>{if(!await confirmAction('외형 삭제',`“${profile.name||'이 외형'}”을 삭제할까요?`))return;remember();item.profiles.splice(pi,1);render(true);}));variants.append(row);
                 }
-                variants.append(button('외형 추가',()=>{if(item.profiles.length>=10)throw new Error('외형 프로필은 최대 10개입니다.');remember();item.profiles.push({id:crypto.randomUUID(),name:'새 외형',condition:'',appearance:'',outfit:''});render();}));card.append(variants);
-                const actions=el('div','ap2-actions');const up=button('위로',()=>{if(!i)return;remember();[drafts[i-1],drafts[i]]=[drafts[i],drafts[i-1]];render();}),down=button('아래로',()=>{if(i>=drafts.length-1)return;remember();[drafts[i+1],drafts[i]]=[drafts[i],drafts[i+1]];render();});up.disabled=i===0;down.disabled=i===drafts.length-1;actions.append(up,down,button('삭제',async()=>{if(!await confirmAction('인물 삭제',`“${item.name||'이 인물'}”을 라이브러리에서 삭제할까요? 저장 전 되돌리기로 복구할 수 있습니다.`))return;remember();drafts.splice(i,1);render();}));card.append(actions);list.append(card);
-            }};render();
-            saveBar(page,()=>api.saveVisual({...api.visualSettings(),...readFields(fields),library:drafts},scopeChoice.read(),contextKey));
-            page.append(button('기본값 사용',async()=>{await api.resetVisual();await open('characters',true);}));
+                variants.append(button('외형 추가',()=>{if(item.profiles.length>=10)throw new Error('외형 프로필은 최대 10개입니다.');remember();item.profiles.push({id:crypto.randomUUID(),name:'새 외형',condition:'',appearance:'',outfit:''});render(true);}));card.append(variants);
+                const actions=el('div','ap2-actions');const up=button('위로',()=>{if(!i)return;remember();[drafts[i-1],drafts[i]]=[drafts[i],drafts[i-1]];render(true);}),down=button('아래로',()=>{if(i>=drafts.length-1)return;remember();[drafts[i+1],drafts[i]]=[drafts[i],drafts[i+1]];render(true);});up.disabled=i===0;down.disabled=i===drafts.length-1;actions.append(up,down,button('삭제',async()=>{if(!await confirmAction('인물 삭제',`“${item.name||'이 인물'}”을 라이브러리에서 삭제할까요? 인물 탭을 떠나기 전 되돌리기로 복구할 수 있습니다.`))return;remember();drafts.splice(i,1);render(true);}));card.append(actions);list.append(card);
+            }if(save)page.dispatchEvent(new Event('input'));};render();
+            const readVisual=()=>({...readFields(fields),library:structuredClone(drafts)});
+            saveBar(page,()=>api.saveVisual(readVisual(),editingScope,contextKey));
+            const copyActions=choices.filter(([where])=>where!==editingScope).map(([where,label])=>({label:`${label}로 복사`,icon:'fa-copy',run:async()=>{
+                const value=readVisual();
+                if(api.hasVisualOverride(where)&&!await confirmAction('인물 설정 복사',`${label}의 기존 인물·세계관 설정을 현재 편집 내용으로 바꿀까요?`,'복사'))return;
+                await api.saveVisual(value,where,contextKey);
+                if(contextKey!==api.contextKey())return;
+                characterScope=where;await open('characters',true);notice(`${label}로 복사했습니다.`);
+            }}));
+            if(copyActions.length)toolbar.append(actionMenu(copyActions,'다른 범위로 복사'));
+            const inherited=editingScope==='chat'&&api.visualCharacterKey()&&api.hasVisualOverride('character')?'캐릭터 설정 사용':'전체 설정 사용';
+            const reset=button(inherited,async()=>{
+                if(!await confirmAction('설정 범위 해제','이 범위에 저장한 인물·세계관 설정을 해제하고 상위 범위의 설정을 사용할까요?','해제'))return;
+                await api.resetVisual(editingScope,contextKey);if(contextKey===api.contextKey())await open('characters',true);
+            });
+            if(editingScope!=='account')page.append(reset);
+            const refreshScope=()=>{
+                reset.disabled=!api.hasVisualOverride(editingScope);
+                const label={account:'계정 전체',character:'현재 캐릭터',chat:'현재 채팅'},active=api.visualScope();
+                const range=editingScope==='character'?`캐릭터: ${api.character()?.name??''} · 같은 캐릭터의 모든 채팅에 저장합니다.`:editingScope==='chat'?'이 채팅에만 저장합니다.':'모든 캐릭터·채팅의 기본값입니다.';
+                scopeHelp.textContent=`${range} 적용 우선순위: 채팅 → 캐릭터 → 전체. 현재 적용: ${label[active]}.${!api.visualCharacterKey()?' 캐릭터 범위는 1:1 채팅에서 설정합니다.':''}`;
+            };
+            page.addEventListener('scenebook-visual-status',refreshScope);refreshScope();
             page.append(button('다시 불러오기',()=>open('characters',true)));
         }
         if(id==='references') {
@@ -257,8 +291,11 @@ export function studio(api,host=null) {
     };
     tabs.forEach(([id,label,icon])=>{const b=button(label,()=>open(id),false,icon);b.classList.remove('menu_button','menu_button_icon');b.classList.add('ap2-tab');b.dataset.page=id;b.id=`${instanceId}-tab-${id}`;b.setAttribute('role','tab');b.setAttribute('aria-controls',`${instanceId}-page-${id}`);nav.append(b);});
     nav.addEventListener('keydown',event=>{if(!['ArrowLeft','ArrowRight','Home','End'].includes(event.key))return;event.preventDefault();const buttons=[...nav.children],index=buttons.findIndex(b=>b.dataset.page===activeId),next=event.key==='Home'?0:event.key==='End'?buttons.length-1:(index+(event.key==='ArrowRight'?1:-1)+buttons.length)%buttons.length;buttons[next].focus();buttons[next].click();});
-    const refreshSettings=()=>{if(body.isConnected&&cached.has('generation')&&cached.get('generation').dataset.dirty!=='true'){if(activeId==='generation')void open('generation',true);else{cached.get('generation').remove();cached.delete('generation');}}};
-    document.addEventListener('scenebook-settings-changed',refreshSettings);if(!host)dialog.addEventListener('close',()=>document.removeEventListener('scenebook-settings-changed',refreshSettings),{once:true});
+    const refreshCharacters=()=>{const page=cached.get('characters');if(!body.isConnected||!page)return;page.dispatchEvent(new Event('scenebook-visual-status'));if(page.dataset.dirty==='true')return;if(activeId==='characters')void open('characters',true);else{page.remove();cached.delete('characters');}};
+    const refreshSettings=()=>{if(body.isConnected&&cached.has('generation')&&cached.get('generation').dataset.dirty!=='true'){if(activeId==='generation')void open('generation',true);else{cached.get('generation').remove();cached.delete('generation');}}refreshCharacters();};
+    const refreshContext=()=>{characterScope=null;const page=cached.get('characters');if(page?.dataset.dirty==='true')notice('저장되지 않은 인물 입력이 있었습니다. 이전 채팅에는 마지막으로 저장된 설정이 유지됩니다.');page?.remove();cached.delete('characters');if(body.isConnected&&activeId==='characters')void open('characters',true);};
+    document.addEventListener('scenebook-settings-changed',refreshSettings);document.addEventListener('scenebook-visual-changed',refreshCharacters);document.addEventListener('scenebook-context-changed',refreshContext);
+    if(!host)dialog.addEventListener('close',()=>{document.removeEventListener('scenebook-settings-changed',refreshSettings);document.removeEventListener('scenebook-visual-changed',refreshCharacters);document.removeEventListener('scenebook-context-changed',refreshContext);},{once:true});
     void check();void open('generation');
 
 }
@@ -339,7 +376,7 @@ export function compareVersions(versions,currentIndex){
 export function mountSettings(api,container){
     const drawer=el('div','inline-drawer');drawer.id='ap2-settings';
     const header=el('div','inline-drawer-toggle inline-drawer-header');header.tabIndex=0;header.setAttribute('role','button');header.setAttribute('aria-expanded','false');header.setAttribute('aria-controls','ap2-settings-content');
-    const label=el('b','ap2-drawer-title','씬북'),version=el('small','ap2-version','0.4.9'),status=el('small','ap2-muted','');status.id='ap2-status';label.append(version);
+    const label=el('b','ap2-drawer-title','씬북'),version=el('small','ap2-version','0.4.10'),status=el('small','ap2-muted','');status.id='ap2-status';label.append(version);
     const icon=el('div','inline-drawer-icon fa-solid fa-circle-chevron-down down');icon.setAttribute('aria-hidden','true');header.append(label,status,icon);
     const content=el('div','inline-drawer-content ap2-settings');content.id='ap2-settings-content';content.style.display='none';
     drawer.append(header,content);container.append(drawer);

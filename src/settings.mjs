@@ -1,7 +1,7 @@
 import { DEFAULTS } from '../plugin/core.mjs';
 import { migrateWorkflow } from './automatic.mjs';
 const KEY='autopic2',HISTORY='scenebookSettingsHistory';
-export function settingsSnapshot(value){return Object.fromEntries(Object.keys(DEFAULTS).filter(k=>value?.[k]!==undefined).map(k=>[k,structuredClone(value[k])]));}
+export function settingsSnapshot(value){return {...Object.fromEntries(Object.keys(DEFAULTS).filter(k=>value?.[k]!==undefined).map(k=>[k,structuredClone(value[k])])),characterVisuals:structuredClone(value?.characterVisuals??{})};}
 export function preserveSettings(store,value,{now=Date.now(),reason='변경 전',force=false}={}){
     const previous=store[KEY];
     if(previous&&JSON.stringify(settingsSnapshot(previous))!==JSON.stringify(settingsSnapshot(value))){

@@ -7,6 +7,7 @@ import { validateTemplate } from './src/prompts.mjs';
 import { parsePlanJson } from './src/plan-json.mjs';
 import { AutomaticResponses, workflowEnabled } from './src/automatic.mjs';
 import { initializeSettings,preserveSettings,settingsHistory } from './src/settings.mjs';
+import { visualFields,characterKey,characterVisuals,hasVisualScope,activeVisualScope,resolveVisualSettings } from './src/visual-settings.mjs';
 import { createHealthCheck } from './src/server-health.mjs';
 import { renderInjection, validateInjectionTemplate, extractInjectedPlan, readStoredInjection, injectedScenes } from './src/injection.mjs';
 import { WorkQueue } from './src/queue.mjs';
@@ -30,7 +31,7 @@ const automatic = new AutomaticResponses({scope, message:index=>context().chat[i
     run:processAutomatic, error:e=>{setWorkflowStatus(e.message);notice(`자동 처리 실패 · ${e.message}`,true);}});
 
 function settings() { return { ...structuredClone(DEFAULTS), ...context().extensionSettings[KEY] }; }
-function visualSettings(){return{...settings(),...context().chatMetadata?.[KEY]?.visual};}
+function visualSettings(where=null){return resolveVisualSettings(context(),settings(),where);}
 function cleanSettings(value) {
     const c = Object.fromEntries(Object.keys(DEFAULTS).map(k => [k, value[k] ?? structuredClone(DEFAULTS[k])]));
     validateConfig(c);validateTemplate(c.analysisPrompt);validateInjectionTemplate(c.injectionPrompt);
@@ -52,7 +53,41 @@ function cleanSettings(value) {
     c.references=validateConfig(c).references;
     if(!Array.isArray(c.presets)||c.presets.length>30)throw new Error('프리셋은 최대 30개입니다.');
     c.presets=c.presets.map(p=>({name:text(p.name,100),config:generationConfig(validateConfig({...c,...p.config}))}));
+    if(value.characterVisuals!==undefined){
+        const saved=value.characterVisuals;
+        if(!saved||typeof saved!=='object'||Array.isArray(saved))throw new Error('캐릭터별 인물 설정 형식을 확인하세요.');
+        c.characterVisuals=Object.fromEntries(Object.entries(saved).map(([avatar,visual])=>{
+            if(!avatar||avatar.length>500||!visual||typeof visual!=='object'||Array.isArray(visual))throw new Error('캐릭터별 인물 설정 형식을 확인하세요.');
+            return[avatar,visualFields(cleanSettings({...DEFAULTS,...visualFields(visual)}))];
+        }));
+    }
     return c;
+}
+async function saveVisual(value,where,expectedScope){
+    if(!['account','character','chat'].includes(where))throw new Error('인물 설정 범위를 확인하세요.');
+    if(expectedScope&&expectedScope!==scope())throw new Error('편집 중 채팅이 바뀌었습니다. 인물 탭을 다시 열어 주세요.');
+    const ctx=context(),visual=visualFields(cleanSettings({...settings(),...visualFields(value)}));
+    if(where==='account')saveSettings({...settings(),...visual});
+    else if(where==='character'){
+        const key=characterKey(ctx);if(!key)throw new Error('캐릭터 범위는 1:1 캐릭터 채팅에서 설정하세요.');
+        saveSettings({...settings(),characterVisuals:{...characterVisuals(ctx),[key]:visual}});
+    }else{
+        if(!ctx.getCurrentChatId())throw new Error('채팅을 먼저 열어 주세요.');
+        ctx.chatMetadata[KEY]??={};ctx.chatMetadata[KEY].visual=visual;await ctx.saveMetadata();
+    }
+    document.dispatchEvent(new CustomEvent('scenebook-visual-changed',{detail:{scope:where,contextKey:expectedScope}}));
+}
+async function resetVisual(where,expectedScope){
+    if(expectedScope&&expectedScope!==scope())throw new Error('채팅이 바뀌었습니다. 인물 탭을 다시 열어 주세요.');
+    const ctx=context();
+    if(where==='character'){
+        const key=characterKey(ctx);if(!key)throw new Error('캐릭터 채팅을 먼저 열어 주세요.');
+        const saved={...characterVisuals(ctx)};delete saved[key];saveSettings({...settings(),characterVisuals:saved});
+    }else if(where==='chat'){
+        if(!ctx.getCurrentChatId())throw new Error('채팅을 먼저 열어 주세요.');
+        if(ctx.chatMetadata?.[KEY])delete ctx.chatMetadata[KEY].visual;await ctx.saveMetadata();
+    }else throw new Error('해제할 범위를 확인하세요.');
+    document.dispatchEvent(new CustomEvent('scenebook-visual-changed',{detail:{scope:where,contextKey:expectedScope}}));
 }
 function saveSettings(value) { const previous=settings();preserveSettings(context().extensionSettings,cleanSettings(value));context().saveSettingsDebounced();const current=settings();if(!workflowEnabled(current)){clearInjection();automatic.stop();queue.cancelWaiting(item=>item.automatic);}if(['compact','displayWidth','placement'].some(k=>previous[k]!==current[k]))scheduleRender();document.dispatchEvent(new Event('scenebook-settings-changed')); }
 async function request(route, body, signal) {
@@ -363,11 +398,10 @@ function showPlans(){
         body.append(row);
     }
 }
-const api={settings,saveSettings,visualSettings,hasVisualOverride:()=>!!context().chatMetadata?.[KEY]?.visual,
+const api={settings,saveSettings,visualSettings,hasVisualOverride:where=>hasVisualScope(context(),where),visualScope:()=>activeVisualScope(context()),visualCharacterKey:()=>characterKey(context()),hasChat:()=>!!context().getCurrentChatId(),
     contextKey:scope,status:()=>analysisLocks.size?'답변 분석 중':queue.running?'삽화 생성 중':queue.paused?'생성 일시정지':workflowStatus,
     exportChat:()=>downloadChat(context().chat,context().getCurrentChatId()??'삽화 채팅'),
-    saveVisual:async(value,where,expectedScope)=>{const c=cleanSettings(value);if(where==='account'){saveSettings(c);return;}if(expectedScope&&expectedScope!==scope())throw new Error('편집 중 채팅이 바뀌었습니다. 인물 탭을 다시 불러온 뒤 저장하세요.');const ctx=context();if(!ctx.getCurrentChatId())throw new Error('채팅을 먼저 열어 주세요.');ctx.chatMetadata[KEY]??={};ctx.chatMetadata[KEY].visual=Object.fromEntries(['world','direction','playerMode','library'].map(k=>[k,c[k]]));await ctx.saveMetadata();},
-    resetVisual:async()=>{const c=context();if(c.chatMetadata?.[KEY])delete c.chatMetadata[KEY].visual;await c.saveMetadata();},
+    saveVisual,resetVisual,
     references:async()=>(await request('references')).references,uploadReference:value=>request('references',value),
     deleteReference:async id=>{
         await request('references/delete',{id});
@@ -388,7 +422,15 @@ function initialize() {
     const c=context();if(initializeSettings(c.extensionSettings))c.saveSettingsDebounced();
     const container=document.getElementById('extensions_settings2')??document.getElementById('extensions_settings');
     if(container&&!document.getElementById('ap2-settings'))mountSettings(api,container);
-    for(const name of ['CHARACTER_MESSAGE_RENDERED','MESSAGE_UPDATED','MESSAGE_SWIPED','MESSAGE_DELETED','CHAT_CHANGED'])if(c.eventTypes[name])c.eventSource.on(c.eventTypes[name],()=>{if(name==='CHAT_CHANGED'){automatic.reset();receivedCount=0;clearInjection();queue.cancelWaiting();setWorkflowStatus('');}scheduleRender();});
+    for(const name of ['CHARACTER_MESSAGE_RENDERED','MESSAGE_UPDATED','MESSAGE_SWIPED','MESSAGE_DELETED','CHAT_CHANGED'])if(c.eventTypes[name])c.eventSource.on(c.eventTypes[name],()=>{if(name==='CHAT_CHANGED'){automatic.reset();receivedCount=0;clearInjection();queue.cancelWaiting();setWorkflowStatus('');document.dispatchEvent(new Event('scenebook-context-changed'));}scheduleRender();});
+    if(c.eventTypes.CHARACTER_RENAMED)c.eventSource.on(c.eventTypes.CHARACTER_RENAMED,(oldAvatar,newAvatar)=>{
+        const saved={...characterVisuals(context())};if(!Object.hasOwn(saved,oldAvatar)||typeof newAvatar!=='string'||!newAvatar)return;
+        saved[newAvatar]=saved[oldAvatar];if(oldAvatar!==newAvatar)delete saved[oldAvatar];saveSettings({...settings(),characterVisuals:saved});
+    });
+    if(c.eventTypes.CHARACTER_DELETED)c.eventSource.on(c.eventTypes.CHARACTER_DELETED,event=>{
+        const key=event?.character?.avatar,saved={...characterVisuals(context())};if(!key||!Object.hasOwn(saved,key))return;
+        delete saved[key];saveSettings({...settings(),characterVisuals:saved});
+    });
     const receive=(index,type)=>automatic.receive(index,type),finalize=(index,type)=>automatic.receive(index,type,true);
     // Capture the hidden plan before other extensions modify the reply, then
     // observe the finalized body after their render handlers have completed.
