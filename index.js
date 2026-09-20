@@ -16,6 +16,8 @@ import { timelineInstruction,validateTimeline,resolveAt } from './src/timeline.m
 import { el, button, iconButton, notice, studio, composer, inspect, viewer, modal, mountSettings, compareVersions } from './src/ui.mjs';
 
 const KEY = 'autopic2';
+// SillyTavern: in-chat injection, depth 0, System role.
+const ILLUSTRATION_PROMPT = { key: 'scenebook-illustrations', position: 1, depth: 0, role: 0 };
 const context = () => SillyTavern.getContext();
 let sessionRequests = 0, receivedCount = 0, renderTimer;
 const queue = new WorkQueue(() => updateBadge());
@@ -207,10 +209,6 @@ function openIllustration(index,slot) {
     if(!viewState(target,false)?.slots.includes(slot))throw new Error('대상 답변이 바뀌었습니다. 이미지를 다시 열어 주세요.');
     const ensureCurrent=()=>{if(!current(target))throw new Error('대상 답변이 바뀌었습니다. 이미지를 다시 열어 주세요.');return context().chat.indexOf(target.message);};
     viewer(job,{
-        actions:[
-            {label:'편집',icon:'fa-sliders',close:true,run:()=>compose(ensureCurrent(),true,[job.scene],slot.id,{...job.config,seed:job.seed})},
-            {label:'재생성',icon:'fa-rotate-right',close:true,run:()=>{ensureCurrent();return enqueue(target,[job.scene],slot.id,{...job.config,seed:-1});}},
-        ],
         more:[
             {label:'AI 검수',icon:'fa-magnifying-glass',run:()=>reviewImage(job)},
             {label:'생성 기록',icon:'fa-file-lines',run:()=>inspect(job)},
@@ -239,12 +237,18 @@ function renderMessage(index) {
         const imageWrap=el('div','ap2-image-wrap'),overlay=el('div','ap2-image-actions');
         overlay.setAttribute('aria-label','삽화 도구');
         const open=button('',()=>openIllustration(index,slot));open.className='ap2-image-open';open.setAttribute('aria-label',`${job.scene.title} · 이미지 보기`);open.replaceChildren(image);
-        if(slot.versions.length>1){
-            const change=async delta=>{const target=capture(index);if(!viewState(target,false)?.slots.includes(slot))throw new Error('대상 답변이 바뀌었습니다.');slot.selected=(slot.selected+delta+slot.versions.length)%slot.versions.length;await saveMessage(target);};
-            overlay.append(iconButton('이전 그림','fa-chevron-left',()=>change(-1)),el('span','ap2-version-count',`${slot.selected+1}/${slot.versions.length}`),iconButton('다음 그림','fa-chevron-right',()=>change(1)));
-        }
-        overlay.append(iconButton('삽화 도구','fa-gear',()=>openIllustration(index,slot)));
+        const targetForImage=()=>{const target=capture(index);if(!viewState(target,false)?.slots.includes(slot))throw new Error('대상 답변이 바뀌었습니다.');return target;};
+        for(const [label,icon,action]of [
+            ['설정','fa-gear',()=>{targetForImage();return compose(index,true,[job.scene],slot.id,{...job.config,seed:job.seed});}],
+            ['재생성','fa-rotate-right',()=>enqueue(targetForImage(),[job.scene],slot.id,{...job.config,seed:-1})],
+        ]){const b=button('',action,false,icon);b.title=label==='재생성'?'새 시드로 재생성':'프롬프트·배치 편집';b.setAttribute('aria-label',label);overlay.append(b);}
         imageWrap.append(open,overlay);figure.append(imageWrap);
+        if(slot.versions.length>1){
+            const change=async delta=>{const target=targetForImage();slot.selected=(slot.selected+delta+slot.versions.length)%slot.versions.length;await saveMessage(target);};
+            const navigation=el('div','ap2-image-navigation');navigation.setAttribute('role','group');navigation.setAttribute('aria-label','삽화 버전 전환');
+            navigation.append(iconButton('이전 그림','fa-chevron-left',()=>change(-1)),el('span','ap2-version-count',`${slot.selected+1}/${slot.versions.length}`),iconButton('다음 그림','fa-chevron-right',()=>change(1)));
+            figure.append(navigation);
+        }
         const candidates=[...content.querySelectorAll('p')].filter(p=>!p.closest('details,pre,table,.ap2-figure'));
         const anchor=config.placement==='inline'?candidates.find(p=>normalized(p.textContent)===normalized(slot.anchor.quote.replace(/[*_]/g,''))):null;
         if(anchor)anchor.after(figure);else content.append(figure);
@@ -252,14 +256,16 @@ function renderMessage(index) {
     }
 }
 function scheduleRender() {clearTimeout(renderTimer);renderTimer=setTimeout(()=>{document.querySelectorAll('#chat .mes[mesid]').forEach(n=>renderMessage(Number(n.getAttribute('mesid'))));},80);}
-function clearInjection(){context().setExtensionPrompt?.('scenebook-illustrations','',1,0,false,0);}
+function setIllustrationPrompt(value){const p=ILLUSTRATION_PROMPT;context().setExtensionPrompt?.(p.key,value,p.position,p.depth,false,p.role);}
+function clearInjection(){setIllustrationPrompt('');}
 function injectPrompt(type,options,dryRun){
     if(dryRun)return;
     clearInjection();
     const c=visualSettings();
     if(dryRun||['quiet','impersonate'].includes(type)||!context().getCurrentChatId()||!c.promptInjection||c.automatic==='off')return;
     if(!context().setExtensionPrompt){setWorkflowStatus('현재 SillyTavern에서 프롬프트 주입을 지원하지 않습니다.');return;}
-    context().setExtensionPrompt('scenebook-illustrations',renderInjection(c),1,0,false,0);
+    setIllustrationPrompt(renderInjection(c));
+    setWorkflowStatus('삽화 프롬프트 등록됨 · 깊이 0 · System · 답변 기다리는 중');
 }
 async function processAutomatic(candidate) {
     const ctx=context(),index=ctx.chat.indexOf(candidate.message),c=settings();
@@ -283,7 +289,10 @@ async function processAutomatic(candidate) {
     if(state.automatic?.source===target.snapshot.source&&state.automatic.status!=='missing')return;
     if(embedded.found)state.injected=embedded;
     state.automaticOrder??=++receivedCount;
-    if(!embedded.found){state.automatic={source:target.snapshot.source,status:'missing'};setWorkflowStatus('이 답변에서 삽화 지시를 찾지 못했습니다.');await saveMessage(target);return;}
+    if(!embedded.found){
+        const reason='AI 답변에 삽화 지시가 없어 이미지를 생성하지 않았습니다. 작업 → 지시 기록에서 확인하세요.';
+        state.automatic={source:target.snapshot.source,status:'missing',error:reason};setWorkflowStatus(reason);notice(reason);await saveMessage(target);return;
+    }
     if(!current(target)||!workflowEnabled(settings())||candidate.generation?.stopped)return;
     // Save the plan before any network work, and remember every exit reason.
     // A later render of the cleaned message must not discard or replay this plan.

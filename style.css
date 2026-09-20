@@ -134,11 +134,13 @@ details.ap2-group > .ap2-group-content { padding: 0 10px 4px; }
 .ap2-figure img { display: block; width: 100%; height: auto; cursor: zoom-in; object-fit: contain; }
 .ap2-image-wrap { position: relative; }
 .ap2-image-open { appearance: none; display: block; width: 100%; min-width: 0; margin: 0; padding: 0; border: 0; background: transparent; line-height: 0; }
-.ap2-image-actions { position: absolute; bottom: 8px; right: 8px; display: flex; align-items: center; gap: 2px; padding: 2px; border-radius: 6px; color: white; background: #151515b8; box-shadow: 0 1px 5px #0003; }
-.ap2-image-actions .ap2-button { width: 34px; height: 34px; min-height: 34px; padding: 6px; color: white; background: transparent; border: 0; box-shadow: none; }
-.ap2-image-actions .ap2-button:hover { background: #ffffff26; }
-.ap2-image-actions .ap2-button > span:empty { display: none; }
-.ap2-version-count { font: 12px/1.2 system-ui,sans-serif; min-width: 24px; text-align: center; color: white; }
+.ap2-image-actions { position: absolute; top: 8px; right: 8px; display: flex; gap: 5px; }
+.ap2-image-actions .ap2-button { width: 34px; height: 34px; padding: 6px; background: var(--ap2-bg); box-shadow: 0 1px 5px #0005; font-size: .85em; min-height: 28px; }
+.ap2-image-actions .ap2-button > span:empty, .ap2-image-navigation .ap2-button > span:empty { display: none; }
+.ap2-image-navigation { display: flex; justify-content: flex-end; align-items: center; gap: 3px; margin-top: 5px; padding: 0; border: 0; background: transparent; box-shadow: none; color: var(--ap2-muted); }
+:is(#ap2-settings,.ap2-dialog,.ap2-figure) .ap2-image-navigation .ap2-button { width: 30px; min-width: 30px; height: 30px; min-height: 30px; margin: 0; padding: 6px; border: 0; border-radius: 0; background: transparent; box-shadow: none; text-shadow: none; color: inherit; font-size: 12px; }
+.ap2-image-navigation .ap2-button:hover { color: var(--ap2-fg); }
+.ap2-version-count { font: 12px/1.2 system-ui,sans-serif; min-width: 28px; text-align: center; color: inherit; }
 .ap2-placement { margin: 10px 0; padding: 10px; border: 1px solid var(--ap2-border); border-radius: 5px; }
 .ap2-placement h4 { margin: 0 0 6px; font-size: .95em; }
 .ap2-position-choices { display: flex; gap: 5px; flex-wrap: wrap; margin: 8px 0; }

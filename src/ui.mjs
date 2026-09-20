@@ -116,7 +116,7 @@ export function studio(api,host=null) {
     const workflow=el('section','ap2-workflow'),mode=field('처리 방식',api.settings().automatic,{choices:[['generate','자동 생성'],['review','초안만']]}),injection=field('프롬프트 주입',workflowEnabled(api.settings()),{type:'checkbox'}),flowHelp=el('p','ap2-muted'),flowStatus=el('p','ap2-muted ap2-workflow-status');flowStatus.setAttribute('role','status');
     const editInjection=button('프롬프트',()=>promptEditor(api.settings(),value=>api.saveSettings({...api.settings(),...value}),{initial:'injection'}),false,'fa-pen');editInjection.title='기본 삽화 프롬프트 보기·수정';
     workflow.append(injection.wrap,editInjection,mode.wrap,flowHelp,flowStatus);
-    const refreshWorkflow=()=>{const c=api.settings();mode.input.value=c.automatic==='off'?'generate':c.automatic;injection.input.checked=workflowEnabled(c);mode.input.disabled=!workflowEnabled(c);flowHelp.textContent=workflowEnabled(c)?'삽화 프롬프트 주입 → 답변의 지시를 읽어 '+(c.automatic==='review'?'초안 저장':'바로 이미지 생성'):'꺼짐 · 삽화 프롬프트 주입과 자동 처리를 모두 멈춥니다.';flowStatus.textContent=api.status?.()||'설정은 자동 저장됩니다.';};
+    const refreshWorkflow=()=>{const c=api.settings();mode.input.value=c.automatic==='off'?'generate':c.automatic;injection.input.checked=workflowEnabled(c);mode.input.disabled=!workflowEnabled(c);flowHelp.textContent=workflowEnabled(c)?'주입: 깊이 0 · System (최신 대화 위치) → '+(c.automatic==='review'?'초안만 저장':`이미지 생성 · ${c.every===1?'매 답변':`${c.every}개 답변마다`}`):'꺼짐 · 삽화 프롬프트 주입과 자동 처리를 모두 멈춥니다.';flowStatus.textContent=api.status?.()||'설정은 자동 저장됩니다.';};
     mode.input.addEventListener('change',()=>{api.saveSettings({...api.settings(),automatic:mode.read()});refreshWorkflow();});
     injection.input.addEventListener('change',()=>{const c=api.settings(),enabled=injection.read();api.saveSettings({...c,promptInjection:enabled,automatic:enabled&&c.automatic==='off'?'generate':c.automatic});refreshWorkflow();});
     document.addEventListener('scenebook-workflow-status',refreshWorkflow);document.addEventListener('scenebook-settings-changed',refreshWorkflow);
@@ -332,7 +332,7 @@ export function compareVersions(versions,currentIndex){
 export function mountSettings(api,container){
     const drawer=el('div','inline-drawer');drawer.id='ap2-settings';
     const header=el('div','inline-drawer-toggle inline-drawer-header');header.tabIndex=0;header.setAttribute('role','button');header.setAttribute('aria-expanded','false');header.setAttribute('aria-controls','ap2-settings-content');
-    const label=el('b','ap2-drawer-title','씬북'),version=el('small','ap2-version','0.4.5'),status=el('small','ap2-muted','');status.id='ap2-status';label.append(version);
+    const label=el('b','ap2-drawer-title','씬북'),version=el('small','ap2-version','0.4.6'),status=el('small','ap2-muted','');status.id='ap2-status';label.append(version);
     const icon=el('div','inline-drawer-icon fa-solid fa-circle-chevron-down down');icon.setAttribute('aria-hidden','true');header.append(label,status,icon);
     const content=el('div','inline-drawer-content ap2-settings');content.id='ap2-settings-content';content.style.display='none';
     drawer.append(header,content);container.append(drawer);

@@ -1,5 +1,5 @@
 import { DEFAULT_ANALYSIS_PROMPT, promptBundle, readPromptBundle } from './prompts.mjs';
-import { DEFAULT_INJECTION_PROMPT } from './injection.mjs';
+import { DEFAULT_INJECTION_PROMPT, ILLUSTRATION_OUTPUT_RULES } from './injection.mjs';
 import { JSON_OUTPUT_RULES } from './plan-json.mjs';
 import { el, button, field, modal, notice, downloadJson } from './ui.mjs';
 
@@ -10,9 +10,9 @@ export function promptEditor(config,onApply,{initial='image'}={}){
     image.append(style.wrap,negative.wrap,quality.wrap,el('p','ap2-muted','모든 장면의 공통값입니다. 장면·인물별 프롬프트는 장면 편집에서 수정합니다.'));
     const template=field('장면 분석 지시문',config.analysisPrompt||DEFAULT_ANALYSIS_PROMPT,{multiline:true,rows:17});
     analysis.append(template.wrap,el('p','ap2-muted','{{data}} 채팅·인물 · {{maxScenes}} 장면 수 · {{modelRule}} 모델별 작성법 · {{playerRule}} POV · {{direction}} 수정 지시. JSON 응답 형식을 유지하세요.'));
-    const injected=field('삽화 주입 프롬프트',config.injectionPrompt||DEFAULT_INJECTION_PROMPT,{multiline:true,rows:17});injection.append(injected.wrap,el('p','ap2-muted','이 기본 프롬프트가 대화 AI에 전달됩니다. 직접 수정할 수 있으며 적용하면 바로 저장됩니다. <!--scenebook JSON 형식과 {{data}} 변수는 유지하세요.'));
+    const injected=field('삽화 주입 프롬프트',config.injectionPrompt||DEFAULT_INJECTION_PROMPT,{multiline:true,rows:17});injection.append(el('p','ap2-muted','주입 위치: 깊이 0 · System. 일반 답변에서는 최신 대화 뒤에 배치합니다. ST의 프리셋·이어쓰기 지시와 API 후처리에 따라 최종 전송 순서는 달라질 수 있습니다.'),injected.wrap,el('p','ap2-muted','이 기본 프롬프트가 대화 AI에 전달됩니다. 직접 수정할 수 있으며 적용하면 바로 저장됩니다. <!--scenebook JSON 형식과 {{data}} 변수는 유지하세요.'));
     for(const section of [analysis,injection]){
-        const rules=el('details','ap2-guide-topic');rules.append(el('summary','','출력 규칙'),el('p','ap2-muted','형식 오류를 줄이기 위해 전송 시 덧붙이는 규칙입니다. 저장한 지시문은 변경하지 않습니다.'),el('pre','ap2-code',JSON_OUTPUT_RULES));section.append(rules);
+        const rules=el('details','ap2-guide-topic');rules.append(el('summary','','출력 규칙'),el('p','ap2-muted','출력 누락과 형식 오류를 줄이기 위해 전송 시 덧붙이는 규칙입니다. 저장한 지시문은 변경하지 않습니다.'),el('pre','ap2-code',section===injection?`${ILLUSTRATION_OUTPUT_RULES}\n${JSON_OUTPUT_RULES}`:JSON_OUTPUT_RULES));section.append(rules);
     }
     let active=initial==='injection'?2:0;const sections=[image,analysis,injection];sections.forEach((s,n)=>s.hidden=n!==active);
     for(const [i,label]of ['그림체','수동 분석','주입'].entries()){const b=button(label,()=>{active=i;sections.forEach((s,n)=>s.hidden=n!==i);[...tabs.children].forEach((t,n)=>t.setAttribute('aria-pressed',String(n===i)));});b.classList.remove('menu_button','menu_button_icon');b.setAttribute('aria-pressed',String(i===active));tabs.append(b);}body.append(tabs,...sections);

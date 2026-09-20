@@ -4,7 +4,7 @@ import { narrativeBlocks, normalized, compileCharacter, validateAnchor } from '.
 
 export const DEFAULT_INJECTION_PROMPT = `You are also preparing inline illustrations for this story reply. Write the reply normally, then append one hidden illustration plan. The plan is consumed directly by NovelAI; there is no second AI pass to fix missing visual information. Do not show planning, explanations or a separate analysis to the reader.
 
-Choose up to {{maxScenes}} distinct, meaningful visual moments from THIS reply. Prefer a clear action, exchange, reaction or change of place over repeating portraits. Use fewer images when the remaining moments look alike. Each image is one frozen instant after its chosen paragraph: include only events and states already established there, not later actions, hypothetical dialogue or memories presented as current events. An empty scenes array means no image is needed.
+Choose one to {{maxScenes}} distinct, meaningful visual moments from THIS reply when it contains a visible story scene. A quiet conversation, small gesture or reaction is enough; a dramatic event or location change is not required. Prefer a clear action, exchange, reaction or change of place over repeating portraits. Use fewer images when the remaining moments look alike. Each image is one frozen instant after its chosen paragraph: include only events and states already established there, not later actions, hypothetical dialogue or memories presented as current events. Use an empty scenes array only when there is no depictable story scene or the user explicitly requests no illustration.
 
 Build each moment in this order:
 1. Determine the visible participants and the object or contact that makes the event understandable. Keep both sides of an exchange when visible; never drop the receiver while retaining a handover. Anonymous background activity belongs in the environment. If the required cast cannot fit the model limit, select a coherent different moment.
@@ -28,6 +28,7 @@ Write the comment markers literally, without backslashes. Before the closing com
 For an unregistered character add appearance. For changed clothing add outfit. For a registered alternate appearance add profileId. Do not output these instructions or placeholder values as part of the story.`;
 
 const tokens = ['maxScenes', 'modelRule', 'playerRule', 'direction', 'data'];
+export const ILLUSTRATION_OUTPUT_RULES = 'Complete the story and then append exactly one <!--scenebook JSON --> comment in the final answer, not in hidden reasoning. Do not omit the comment or replace it with an explanation. Keep enough output space for a complete, concise JSON plan. Use a non-empty scenes array for a depictable story scene, including quiet dialogue and small gestures, unless the user explicitly requests no illustration. An unchanged setting alone is not a reason to skip every image. Stay within the configured scene limit.';
 export function validateInjectionTemplate(value = '') {
     text(value, 30000, '주입 프롬프트');
     if (value && (!value.includes('{{data}}') || !value.includes('<!--scenebook'))) throw new Error('주입 지시문에는 {{data}}와 <!--scenebook 출력 형식이 필요합니다.');
@@ -42,7 +43,7 @@ export function renderInjection(config) {
         direction: JSON.stringify(config.direction), data: JSON.stringify({ world: config.world, library: config.library }),
     };
     const prompt=(validateInjectionTemplate(config.injectionPrompt ?? '') || DEFAULT_INJECTION_PROMPT).replace(/\{\{(\w+)\}\}/g, (_, key) => values[key]);
-    return `${prompt}\n\n${JSON_OUTPUT_RULES} Write <!--scenebook and --> literally, without backslashes. Keep all illustration JSON inside that single comment after the story.`;
+    return `${prompt}\n\n${ILLUSTRATION_OUTPUT_RULES}\n${JSON_OUTPUT_RULES} Write <!--scenebook and --> literally, without backslashes. Keep all illustration JSON inside that single comment after the story.`;
 }
 
 // Read our marker independently of how the model wraps JSON or breaks lines.
