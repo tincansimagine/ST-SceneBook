@@ -1,4 +1,4 @@
-// Independent protocol model. See docs/API-EVIDENCE.md for primary sources.
+// NovelAI protocol validation and request payloads.
 export const MODELS = Object.freeze({
     'nai-diffusion-5-full': { label: 'V5 Full', family: 5, characters: 32, tokens: 1471, references: false },
     'nai-diffusion-5-curated': { label: 'V5 Curated', family: 5, characters: 32, tokens: 703, references: false },

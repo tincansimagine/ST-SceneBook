@@ -12,3 +12,5 @@ git-release/
 *.log
 Thumbs.db
 .DS_Store
+# Development notes are not release files.
+docs/
