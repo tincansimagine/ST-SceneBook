@@ -45,10 +45,9 @@ export class AutomaticResponses {
 
 export function migrateWorkflow(saved, defaults) {
     const next = { ...structuredClone(defaults), ...saved };
-    // Only migrate the old untouched off/every-two defaults once. Later choices stick.
-    if (saved && !saved.workflowVersion && saved.automatic === 'off' && saved.every === 2) {
-        next.automatic = 'generate'; next.every = 1;
-    }
-    next.workflowVersion = 1;
+    // An old off/every-two combination can be an intentional user choice.
+    // Fill missing fields only; never interpret saved choices as unused defaults.
+    next.workflowVersion = 2;
     return next;
 }
+export const workflowEnabled=config=>config.promptInjection===true&&config.automatic!=='off';

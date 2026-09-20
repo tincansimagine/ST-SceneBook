@@ -32,7 +32,7 @@ export function registerRoutes(router, { service, readKey, vertexRequest }) {
     };
     router.get('/health', wrap(async (req, res) => {
         await service.locations(req.user.directories);
-        res.json({ version: '0.4.2', models: MODELS, hasKey: !!readKey(req.user.directories) });
+        res.json({ version: '0.4.3', models: MODELS, hasKey: !!readKey(req.user.directories) });
     }));
     router.get('/jobs', wrap(async (req, res) => res.json({ jobs: await service.list(req.user.directories) })));
     router.post('/vertex',wrap(async(req,res)=>{

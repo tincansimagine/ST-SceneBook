@@ -58,7 +58,7 @@ export function compileCharacter(character, library, playerMode = 'auto') {
     if (entry?.player && playerMode === 'pov') return null;
     const profile = entry?.profiles?.find(x => x.id === (character.profileId || entry.defaultProfileId));
     if (character.profileId && !profile) throw new Error('존재하지 않는 외형 프로필입니다.');
-    const identity = profile?.appearance ?? entry?.appearance ?? '';
+    const identity = profile?.appearance ?? entry?.appearance ?? character.appearance ?? '';
     const outfit = character.outfit ?? profile?.outfit ?? entry?.outfit ?? '';
     return { ...character, name: entry?.name ?? character.name, negative:[entry?.negative,character.negative].filter(Boolean).join(', '), prompt: [identity, outfit, character.action ?? character.prompt].filter(Boolean).join(', ') };
 }

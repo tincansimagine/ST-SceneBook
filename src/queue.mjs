@@ -1,12 +1,12 @@
 export class WorkQueue {
     constructor(onChange = () => {}) { this.items = []; this.running = false; this.onChange = onChange; this.paused = false; }
-    add(key, run, label = '') {
+    add(key, run, label = '', metadata = {}) {
         if (this.items.some(x => x.key === key && ['waiting', 'running'].includes(x.state))) return false;
         if (this.items.filter(x => x.state === 'waiting').length >= 20) throw new Error('대기열이 가득 찼습니다 (최대 20개).');
-        this.items.push({ key, run, label, state: 'waiting' });
+        this.items.push({ ...metadata, key, run, label, state: 'waiting' });
         this.onChange(); void this.drain(); return true;
     }
-    cancelWaiting() { this.items.filter(x => x.state === 'waiting').forEach(x => x.state = 'cancelled'); this.onChange(); }
+    cancelWaiting(predicate = () => true) { this.items.filter(x => x.state === 'waiting'&&predicate(x)).forEach(x => x.state = 'cancelled'); this.onChange(); }
     toggle() { this.paused = !this.paused; this.onChange(); if (!this.paused) void this.drain(); }
     async drain() {
         if (this.running) return;

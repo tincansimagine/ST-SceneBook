@@ -1,1 +1,1 @@
-{ "name": "autopic2-server", "version": "0.4.2", "type": "module", "main": "index.mjs", "engines": { "node": ">=20" } }
+{ "name": "autopic2-server", "version": "0.4.3", "type": "module", "main": "index.mjs", "engines": { "node": ">=20" } }
