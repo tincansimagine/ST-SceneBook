@@ -28,7 +28,7 @@ export function iconButton(label, icon, action) {
 }
 // Native popovers stay above the scrolling dialog and dismiss on outside click.
 export function actionMenu(actions,label='더 보기') {
-    const wrap=el('div','ap2-action-menu'),panel=el('div','ap2-action-panel');panel.setAttribute('popover','auto');
+    const wrap=el('div','ap2-action-menu'),panel=el('div','ap2-action-panel');panel.setAttribute('popover','auto');panel.setAttribute('role','group');panel.setAttribute('aria-label',label);
     const trigger=iconButton(label,'fa-ellipsis',()=>{
         if(panel.matches(':popover-open')){panel.hidePopover();return;}
         panel.showPopover();const r=trigger.getBoundingClientRect(),p=panel.getBoundingClientRect();
@@ -53,7 +53,7 @@ export function modal(title, subtitle = '') {
     if (subtitle) titleBox.append(el('p', 'ap2-muted', subtitle));
     header.append(titleBox, button('닫기', () => dialog.close()));
     const body = el('div', 'ap2-body'); dialog.append(header, body); document.body.append(dialog);
-    dialog.addEventListener('close', () => { dialog.remove(); previous?.focus(); });
+    dialog.addEventListener('close', () => { placeNotices(); dialog.remove(); previous?.focus(); });
     for(const event of ['mousedown','pointerdown','click'])dialog.addEventListener(event,e=>e.stopPropagation());
     dialog.addEventListener('click', e => { if (e.target === dialog) { const r = dialog.getBoundingClientRect(); if (e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom) dialog.close(); } });
     dialog.showModal();placeNotices(); return { dialog, body };
@@ -151,8 +151,8 @@ export function studio(api,host=null) {
             addField(counts,fields,'contextMessages','이전 메시지',c.contextMessages,{type:'number',min:0,max:30,step:1});
             analysis.append(button('분석',()=>api.analyze(),false,'fa-wand-magic-sparkles'),el('p','ap2-muted','삽화 지시가 없는 답변을 따로 분석합니다. 별도 AI 요청이 발생합니다.'));
             const prompts=settingGroup(page,'프롬프트',true);
-            addField(prompts,fields,'style','그림체',c.style,{multiline:true});
-            addField(prompts,fields,'negative','제외 요소',c.negative,{multiline:true,rows:2});
+            addField(prompts,fields,'style','메인 프롬프트',c.style,{multiline:true});
+            addField(prompts,fields,'negative','UC 프롬프트',c.negative,{multiline:true,rows:2});
             prompts.append(button('편집 · 공유',()=>promptEditor({...api.settings(),...readFields(fields)},value=>{for(const key of ['style','negative'])fields[key].input.value=value[key];fields.quality.input.checked=value.quality;for(const key of ['analysisPrompt','injectionPrompt'])fields[key]={read:()=>value[key]};api.saveSettings({...api.settings(),...value});}),false,'fa-pen'));
             const automatic=settingGroup(page,'자동 생성 한도',true);
             const limits=el('div','ap2-grid');automatic.append(limits);
@@ -332,7 +332,7 @@ export function compareVersions(versions,currentIndex){
 export function mountSettings(api,container){
     const drawer=el('div','inline-drawer');drawer.id='ap2-settings';
     const header=el('div','inline-drawer-toggle inline-drawer-header');header.tabIndex=0;header.setAttribute('role','button');header.setAttribute('aria-expanded','false');header.setAttribute('aria-controls','ap2-settings-content');
-    const label=el('b','ap2-drawer-title','씬북'),version=el('small','ap2-version','0.4.6'),status=el('small','ap2-muted','');status.id='ap2-status';label.append(version);
+    const label=el('b','ap2-drawer-title','씬북'),version=el('small','ap2-version','0.4.7'),status=el('small','ap2-muted','');status.id='ap2-status';label.append(version);
     const icon=el('div','inline-drawer-icon fa-solid fa-circle-chevron-down down');icon.setAttribute('aria-hidden','true');header.append(label,status,icon);
     const content=el('div','inline-drawer-content ap2-settings');content.id='ap2-settings-content';content.style.display='none';
     drawer.append(header,content);container.append(drawer);

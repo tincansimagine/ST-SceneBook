@@ -6,7 +6,7 @@ import { el, button, field, modal, notice, downloadJson } from './ui.mjs';
 export function promptEditor(config,onApply,{initial='image'}={}){
     const {dialog,body}=modal('프롬프트');
     const tabs=el('div','ap2-editor-tabs'),image=el('div'),analysis=el('div'),injection=el('div');analysis.hidden=injection.hidden=true;
-    const style=field('그림체',config.style,{multiline:true,rows:5}),negative=field('제외 요소',config.negative,{multiline:true}),quality=field('품질 태그',config.quality,{type:'checkbox'});
+    const style=field('메인 프롬프트',config.style,{multiline:true,rows:5}),negative=field('UC 프롬프트',config.negative,{multiline:true}),quality=field('품질 태그',config.quality,{type:'checkbox'});
     image.append(style.wrap,negative.wrap,quality.wrap,el('p','ap2-muted','모든 장면의 공통값입니다. 장면·인물별 프롬프트는 장면 편집에서 수정합니다.'));
     const template=field('장면 분석 지시문',config.analysisPrompt||DEFAULT_ANALYSIS_PROMPT,{multiline:true,rows:17});
     analysis.append(template.wrap,el('p','ap2-muted','{{data}} 채팅·인물 · {{maxScenes}} 장면 수 · {{modelRule}} 모델별 작성법 · {{playerRule}} POV · {{direction}} 수정 지시. JSON 응답 형식을 유지하세요.'));

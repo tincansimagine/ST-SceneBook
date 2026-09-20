@@ -85,16 +85,8 @@ export function normalizeMetadata(fields,dimensions={}){
     if(p.sampler!==undefined){if(!SAMPLERS.includes(p.sampler))warnings.push(`지원하지 않는 샘플러: ${String(p.sampler).slice(0,100)}. 현재 샘플러를 유지합니다.`);else patch.sampler=p.sampler;}
     if(p.noise_schedule!==undefined){if(!['karras','native','exponential','polyexponential'].includes(p.noise_schedule))warnings.push('지원하지 않는 스케줄러는 적용하지 않습니다.');else patch.scheduler=p.noise_schedule;}
     if(p.straight_alpha!==undefined){if(typeof p.straight_alpha!=='boolean')throw new Error('투명 배경 값이 올바르지 않습니다.');patch.transparent=p.straight_alpha;}
-    for(const [source,key]of [['use_coords','useCoords'],['use_order','useOrder']]){const value=p.v4_prompt?.[source]??p[source];if(value!==undefined){if(typeof value!=='boolean')throw new Error('인물 배치 설정이 올바르지 않습니다.');patch[key]=value;}}
-    const rawChars=positive?.char_captions??p.characterPrompts?.map(c=>({char_caption:c.prompt,centers:[{x:c.center?.x??.5,y:c.center?.y??.5}]}))??[];
-    if(!Array.isArray(rawChars)||rawChars.length>32)throw new Error('인물 프롬프트의 형식 또는 수를 확인하세요.');
-    const characters=rawChars.map((ch,i)=>{
-        if(!object(ch))throw new Error('인물 프롬프트를 해석할 수 없습니다.');
-        if((ch.centers?.length??0)>1)warnings.push(`인물 ${i+1}의 여러 중심점 중 첫 위치만 가져옵니다.`);
-        const center=ch.centers?.[0]??{x:.5,y:.5};
-        return{name:`인물 ${i+1}`,prompt:ch.char_caption??'',negative:negative?.char_captions?.[i]?.char_caption??p.characterPrompts?.[i]?.uc??'',x:center.x,y:center.y};
-    });
-    const scene={title:typeof fields.Title==='string'?fields.Title.slice(0,150):'가져온 장면',prompt,camera:'',negative:negative?.base_caption??p.uc??p.negative_prompt??'',after:1,evidence:'',characters};
+    // Character prompts, their negatives and coordinates are deliberately ignored.
+    const scene={title:typeof fields.Title==='string'?fields.Title.slice(0,150):'가져온 장면',prompt,camera:'',negative:negative?.base_caption??p.uc??p.negative_prompt??'',after:1,evidence:'',characters:[]};
     normalizeScene(scene,model??'nai-diffusion-5-full');
     const flags={sm:'SMEA',sm_dyn:'SMEA DYN',dynamic_thresholding:'동적 Guidance',legacy:'Legacy',legacy_v3_extend:'Legacy prompt',deliberate_euler_ancestral_bug:'구형 Euler 동작'};
     for(const [key,label]of Object.entries(flags))if(p[key])unsupported.push(label);
@@ -109,13 +101,16 @@ export function normalizeMetadata(fields,dimensions={}){
 }
 export function importedConfig(current,result,{model=result.patch.model,relaxBudget=false,forScene=true}={}){
     if(!model||!Object.hasOwn(MODELS,model))throw new Error('적용할 이미지 모델을 선택하세요.');
-    const patch={...result.patch,model};delete patch.seed;
+    const patch=Object.fromEntries(['width','height','steps','scale','sampler','scheduler','cfgRescale','transparent'].filter(key=>Object.hasOwn(result.patch,key)).map(key=>[key,result.patch[key]]));patch.model=model;
     const next={...current,...patch,budgetGuard:relaxBudget?false:current.budgetGuard};
     if(model.startsWith('nai-diffusion-5-')&&!patch.scheduler)next.scheduler='karras';
     if(!model.startsWith('nai-diffusion-5-')&&patch.transparent===undefined)next.transparent=false;
     // Expanded prompts already contain their quality tags. Keep them once.
-    if(forScene)Object.assign(next,{style:'',negative:'',quality:false,references:[],transparent:patch.transparent??false,useCoords:patch.useCoords??true,useOrder:patch.useOrder??true});
-    else if(!MODELS[model].references&&current.references?.length)throw new Error('현재 참조 적용을 해제한 뒤 V5 설정을 가져오세요.');
+    if(forScene)Object.assign(next,{style:'',negative:'',quality:false,references:[],transparent:patch.transparent??false});
+    else {
+        Object.assign(next,{style:result.scene.prompt,negative:result.scene.negative,quality:false});
+        if(!MODELS[model].references&&current.references?.length)throw new Error('현재 참조 적용을 해제한 뒤 V5 설정을 가져오세요.');
+    }
     validateConfig(next);return next;
 }
 export async function readNovelAiImage(file){

@@ -13,7 +13,7 @@ import { WorkQueue } from './src/queue.mjs';
 import { downloadChat } from './src/export.mjs';
 import { mergeRevision } from './src/revision.mjs';
 import { timelineInstruction,validateTimeline,resolveAt } from './src/timeline.mjs';
-import { el, button, iconButton, notice, studio, composer, inspect, viewer, modal, mountSettings, compareVersions } from './src/ui.mjs';
+import { el, button, notice, studio, composer, inspect, viewer, modal, mountSettings, compareVersions, confirmAction } from './src/ui.mjs';
 
 const KEY = 'autopic2';
 // SillyTavern: in-chat injection, depth 0, System role.
@@ -154,11 +154,13 @@ async function attach(target,job,slotId=null) {
     let slot=state.slots.find(s=>s.id===slotId);
     if(!slot){slot={id:slotId??crypto.randomUUID(),anchor:validateAnchor(scene,target.snapshot),versions:[],selected:0};state.slots.push(slot);}
     if(slot.versions.some(v=>v.id===job.id))return;
+    if(slot.deleted){slot.versions.push(job);await saveMessage(target);notice('이미 삭제한 삽화의 생성 결과는 갤러리에 보관했습니다.');return false;}
     slot.versions.push(job);slot.selected=slot.versions.length-1;slot.hidden=false;
     await saveMessage(target);return true;
 }
 async function enqueue(target,scenes,slotId=null,overrideConfig=null) {
     if(!current(target))throw new Error('생성 대상이 바뀌었습니다. 다시 열어 주세요.');
+    if(slotId&&viewState(target,false)?.slots.find(slot=>slot.id===slotId)?.deleted)throw new Error('이미 삭제한 삽화입니다. 갤러리에서 다시 삽입할 수 있습니다.');
     if(!scenes.length)throw new Error('생성할 장면을 추가하세요.');
     const c=overrideConfig??target.config;
     const checked=scenes.map(s=>normalizeScene(s,c.model,target.snapshot.blocks.length));
@@ -172,6 +174,7 @@ async function enqueue(target,scenes,slotId=null,overrideConfig=null) {
             let progress;
             try{
             if(!current(target))throw new Error('대상 변경으로 대기 중 생성을 취소했습니다.');
+            if(slotId&&viewState(target,false)?.slots.find(slot=>slot.id===slotId)?.deleted)throw new Error('삽화 삭제로 대기 중 재생성을 취소했습니다.');
             if(target.automaticCandidate&&(!workflowEnabled(settings())||settings().automatic!=='generate'||target.automaticCandidate.generation?.stopped))throw new Error('자동 처리 중단으로 대기 중 생성을 취소했습니다.');
             if(sessionRequests>=settings().sessionLimit)throw new Error('생성 요청 한도에 도달했습니다.');
             sessionRequests++;
@@ -204,18 +207,30 @@ function updateBadge() {
     const waiting=queue.items.filter(x=>x.state==='waiting').length;
     b.textContent=analysisLocks.size?'분석 중':queue.running?`생성 중${waiting?` +${waiting}`:''}`:queue.paused?'일시정지':'';
 }
+async function deleteIllustration(target,slot) {
+    const ensureCurrent=()=>{if(!current(target)||!viewState(target,false)?.slots.includes(slot)||slot.deleted)throw new Error('대상 삽화가 바뀌었습니다. 다시 열어 주세요.');};
+    ensureCurrent();
+    if(!await confirmAction('삽화 삭제','이 삽화를 채팅에서 삭제할까요? 이 위치의 이전 버전도 함께 제거하며, 원본 이미지는 갤러리에 남습니다.'))return false;
+    ensureCurrent();
+    const previousHidden=slot.hidden;
+    slot.hidden=true;slot.deleted=true;
+    try{await saveMessage(target);}catch(error){slot.hidden=previousHidden;delete slot.deleted;scheduleRender();throw error;}
+    queue.cancelWaiting(item=>item.key===`${target.scope}:${target.id}:${target.key}:${slot.id}`);
+    notice('채팅에서 삽화를 삭제했습니다. 원본은 갤러리에 남아 있습니다.');
+    return true;
+}
 function openIllustration(index,slot) {
     const target=capture(index),job=slot.versions[slot.selected];
-    if(!viewState(target,false)?.slots.includes(slot))throw new Error('대상 답변이 바뀌었습니다. 이미지를 다시 열어 주세요.');
-    const ensureCurrent=()=>{if(!current(target))throw new Error('대상 답변이 바뀌었습니다. 이미지를 다시 열어 주세요.');return context().chat.indexOf(target.message);};
-    viewer(job,{
+    if(!viewState(target,false)?.slots.includes(slot)||slot.deleted)throw new Error('대상 답변이 바뀌었습니다. 이미지를 다시 열어 주세요.');
+    const ensureCurrent=()=>{if(!current(target)||slot.deleted)throw new Error('대상 답변이 바뀌었습니다. 이미지를 다시 열어 주세요.');return context().chat.indexOf(target.message);};
+    const {dialog}=viewer(job,{
+        actions:[{label:'삭제',icon:'fa-trash-can',run:async()=>{if(await deleteIllustration(target,slot))dialog.close();}}],
         more:[
             {label:'AI 검수',icon:'fa-magnifying-glass',run:()=>reviewImage(job)},
             {label:'생성 기록',icon:'fa-file-lines',run:()=>inspect(job)},
             ...(slot.versions.length>1?[{label:'버전 비교',icon:'fa-columns',run:()=>compareVersions(slot.versions,slot.selected)}]:[]),
             {label:'같은 시드로 생성',run:()=>{ensureCurrent();return enqueue(target,[job.scene],slot.id,{...job.config,seed:job.seed});}},
             {label:'기본 시드로 저장',run:()=>{saveSettings({...settings(),seed:job.seed});notice(`Seed ${job.seed} 저장됨`);}},
-            {label:'숨기기',icon:'fa-eye-slash',close:true,run:async()=>{ensureCurrent();slot.hidden=true;await saveMessage(target);notice('그림을 숨겼습니다. 갤러리에서 다시 삽입할 수 있습니다.');}},
         ],
     });
 }
@@ -230,14 +245,14 @@ function renderMessage(index) {
     const nodes=[];rendered.set(content,{signature,nodes});
     if(!state||state.source!==m.mes)return;
     for(const slot of state.slots??[]){
-        if(slot.hidden)continue;
+        if(slot.hidden||slot.deleted)continue;
         const job=slot.versions?.[slot.selected];if(!job||!safeImagePath(job.url))continue;
         const figure=el('figure','ap2-figure');figure.style.maxWidth=`${config.compact?Math.min(360,config.displayWidth):config.displayWidth}px`;
         const image=el('img');image.src=job.url;image.alt=job.scene.title;image.loading='lazy';image.width=job.config.width;image.height=job.config.height;
         const imageWrap=el('div','ap2-image-wrap'),overlay=el('div','ap2-image-actions');
         overlay.setAttribute('aria-label','삽화 도구');
         const open=button('',()=>openIllustration(index,slot));open.className='ap2-image-open';open.setAttribute('aria-label',`${job.scene.title} · 이미지 보기`);open.replaceChildren(image);
-        const targetForImage=()=>{const target=capture(index);if(!viewState(target,false)?.slots.includes(slot))throw new Error('대상 답변이 바뀌었습니다.');return target;};
+        const targetForImage=()=>{const target=capture(index);if(!viewState(target,false)?.slots.includes(slot)||slot.deleted)throw new Error('대상 답변이 바뀌었습니다.');return target;};
         for(const [label,icon,action]of [
             ['설정','fa-gear',()=>{targetForImage();return compose(index,true,[job.scene],slot.id,{...job.config,seed:job.seed});}],
             ['재생성','fa-rotate-right',()=>enqueue(targetForImage(),[job.scene],slot.id,{...job.config,seed:-1})],
@@ -246,7 +261,9 @@ function renderMessage(index) {
         if(slot.versions.length>1){
             const change=async delta=>{const target=targetForImage();slot.selected=(slot.selected+delta+slot.versions.length)%slot.versions.length;await saveMessage(target);};
             const navigation=el('div','ap2-image-navigation');navigation.setAttribute('role','group');navigation.setAttribute('aria-label','삽화 버전 전환');
-            navigation.append(iconButton('이전 그림','fa-chevron-left',()=>change(-1)),el('span','ap2-version-count',`${slot.selected+1}/${slot.versions.length}`),iconButton('다음 그림','fa-chevron-right',()=>change(1)));
+            const back=button('‹',()=>change(-1)),next=button('›',()=>change(1));
+            for(const [b,label]of [[back,'이전 그림'],[next,'다음 그림']]){b.classList.remove('menu_button','menu_button_icon');b.setAttribute('aria-label',label);b.title=label;}
+            navigation.append(back,el('span','ap2-version-count',`${slot.selected+1}/${slot.versions.length}`),next);
             figure.append(navigation);
         }
         const candidates=[...content.querySelectorAll('p')].filter(p=>!p.closest('details,pre,table,.ap2-figure'));
