@@ -10,7 +10,7 @@ export function validatePng(data) {
     if(width<1||height<1||width*height>2200000)throw new Error('레퍼런스 이미지는 220만 픽셀 이하여야 합니다.');
     return {buffer,width,height};
 }
-async function locations(dirs){const meta=path.join(dirs.root,'autopic2-references'),images=path.join(dirs.images,'autopic2');await Promise.all([mkdir(meta,{recursive:true}),mkdir(images,{recursive:true})]);return{meta,images};}
+async function locations(dirs){const meta=path.join(dirs.root,'autopic2-references'),images=path.join(dirs.userImages,'autopic2');await Promise.all([mkdir(meta,{recursive:true}),mkdir(images,{recursive:true})]);return{meta,images};}
 export async function saveReference(dirs,input){
     const {buffer,width,height}=validatePng(input?.image);const label=String(input?.label??'레퍼런스').slice(0,100),id=randomUUID();
     const loc=await locations(dirs);const record={id,label,width,height,url:`/user/images/autopic2/${id}.png`};

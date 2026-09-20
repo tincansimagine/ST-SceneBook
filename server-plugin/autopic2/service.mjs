@@ -33,9 +33,9 @@ export class GenerationService {
         this.active = new Map(); this.cooldowns = new Map();
     }
     async locations(directories) {
-        if (!directories?.root || !directories?.images) throw new ApiError(401, 'SillyTavern 사용자 디렉터리가 필요합니다.');
+        if (typeof directories?.root !== 'string' || !directories.root || typeof directories?.userImages !== 'string' || !directories.userImages) throw new ApiError(500, 'SillyTavern 사용자 저장 경로를 읽을 수 없습니다. 씬북 서버 플러그인을 업데이트하고 서버를 재시작하세요.', 'USER_DIRECTORIES');
         const ledger = path.join(directories.root, 'autopic2-jobs');
-        const images = path.join(directories.images, 'autopic2');
+        const images = path.join(directories.userImages, 'autopic2');
         await Promise.all([mkdir(ledger, { recursive: true }), mkdir(images, { recursive: true })]);
         return { ledger, images, user: path.resolve(directories.root) };
     }

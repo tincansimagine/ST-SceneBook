@@ -51,3 +51,10 @@ V5의 모델명만 바꾸고 구형 본문으로 전송하는 방식은 사용�
 - 명시적인 분석 프로필은 `ConnectionManagerRequestService.sendRequest`를 사용한다. 선택하지 않으면 `getContext().generateRaw({prompt, responseLength, trimNames:false})`로 현재 채팅 연결을 사용한다. 이 호출에 대상 이전의 제한된 문맥과 대상 본문만 전달하며 이후 답변은 넣지 않는다.
 - 독립된 `<!--scenebook ... -->` JSON 블록을 해석하고 원문 인용이 한 문단에만 일치하는지 검사한다. 선택된 스와이프만 정리하며 다른 스와이프를 변경하지 않는다. 정보가 없거나 잘못되면 답변 분석으로 이어진다. 명시적인 빈 장면 배열은 추가 분석·이미지 요청을 만들지 않는다.
 - 이번 수정은 유료 API 요청 없이 Node 회귀 테스트와 가상 이벤트/이미지 응답으로 검증한다. 실제 계정의 생성 권한·이미지 품질을 검증했다는 의미는 아니다.
+
+## 사용자 저장 경로 수정 (0.4.1)
+
+- 로컬 ST `src/constants.js`의 `USER_DIRECTORY_TEMPLATE`, `src/users.js`의 `getUserDirectories` 및 `/user/images/*` 정적 경로를 직접 대조했다. 사용자 이미지 경로 속성은 `userImages`다. `images`는 사용자 경로 객체에 존재하지 않으며 `PUBLIC_DIRECTORIES.images`와 혼동해서는 안 된다.
+- 생성·복구·갤러리·검수·참조 저장에서 `userImages`를 사용한다. 사용자 루트의 기존 작업 기록 경로와 공개 이미지 URL은 바뀌지 않는다.
+- `tests/st-contract.test.mjs`는 설치된 ST의 실제 `USER_DIRECTORY_TEMPLATE`과 Express를 불러와 임시 사용자 두 명으로 HTTP 라우트를 검사한다. health → generate → jobs → PNG 조회 → review, 참조 업로드·목록·이미지 조회, 사용자 간 격리를 검증한다. 경로 객체를 잘못 만들었던 기존 테스트도 실제 속성 이름으로 수정했다.
+- 이미지 공급자 응답과 키만 테스트 값으로 대체한다. 사용자 키·채팅·기존 이미지 파일은 읽거나 변경하지 않는다. `SILLYTAVERN_ROOT` 환경 변수로 다른 위치의 ST를 지정할 수 있다. 호스트가 없는 환경은 해당 계약 테스트를 건너뛰었다고 표시한다.

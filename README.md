@@ -4,7 +4,9 @@ SillyTavern 채팅에 NovelAI 삽화를 생성하고 삽입하는 확장입니�
 
 이 확장은 **깡통 커뮤니티에서 배포된 SillyTavern용 오토픽(AutoPic) 확장**을 참고하여 제작했습니다. 원작자의 허락을 받아 참고했으며, 오토픽 제작자에게 감사드립니다.
 
-버전 **0.4.0** · Node.js 20 이상 · SillyTavern 1.13.3 이상
+버전 **0.4.1** · Node.js 20 이상 · SillyTavern 1.13.3 이상
+
+0.4.1은 “SillyTavern 사용자 디렉터리가 필요합니다” 오류를 수정합니다. **`server-plugin/autopic2` 내용을 `SillyTavern/plugins/autopic2`에 덮어쓰고 서버를 재시작하세요.** 브라우저 확장만 업데이트하면 이 오류는 해결되지 않습니다. 기존 실패 건은 장면 편집에서 초안을 열어 다시 생성할 수 있습니다.
 
 ## 설치
 
