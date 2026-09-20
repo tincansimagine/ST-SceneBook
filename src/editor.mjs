@@ -4,7 +4,7 @@ import { sceneBundle, readSceneBundle } from './editor-data.mjs';
 import { showGuide } from './guide.mjs';
 import { generationEditor } from './generation-ui.mjs';
 import { paragraphPosition } from './paragraph-ui.mjs';
-import { el, button, field, addField, readFields, modal, notice, confirmAction, downloadJson } from './ui.mjs';
+import { el, button, field, addField, readFields, modal, notice, confirmAction, downloadJson, actionMenu } from './ui.mjs';
 
 export function composer({context,scenes,config,onAnalyze,onGenerate,onDraft,previewUrl}){
     const {dialog,body}=modal('장면 편집');dialog.classList.add('ap2-editor');
@@ -25,11 +25,15 @@ export function composer({context,scenes,config,onAnalyze,onGenerate,onDraft,pre
     for(const [key,label]of [['scene','장면'],['cast','인물·배치'],['final','프롬프트']]){const b=button(label,()=>{tab=key;renderContent();});b.classList.remove('menu_button','menu_button_icon');b.dataset.tab=key;nav.append(b);}
     body.append(nav,status,content);
     const footer=el('footer','ap2-footer ap2-editor-footer'),secondary=el('div','ap2-actions'),primary=el('div','ap2-actions');footer.append(secondary,primary);dialog.append(footer);
-    const undoButton=button('되돌리기',()=>{const last=undo.pop();if(!last)return;drafts=last.drafts;Object.assign(config,last.config);selected=last.selected;person=last.person;dirty=true;render();},false,'fa-rotate-left');
+    const undoButton=iconButton('되돌리기','fa-rotate-left',()=>{const last=undo.pop();if(!last)return;drafts=last.drafts;Object.assign(config,last.config);selected=last.selected;person=last.person;dirty=true;render();});
     const input=el('input');input.type='file';input.accept='.json,application/json';input.hidden=true;
-    secondary.append(undoButton,button('내보내기',()=>downloadJson(sceneBundle(drafts,config),'scenebook-scenes.json')),button('가져오기',()=>input.click()),button('사용법',showGuide),input);
+    secondary.append(undoButton,actionMenu([
+        {label:'내보내기',icon:'fa-file-export',run:()=>downloadJson(sceneBundle(drafts,config),'scenebook-scenes.json')},
+        {label:'가져오기',icon:'fa-file-import',run:()=>input.click()},
+        {label:'사용법',icon:'fa-circle-question',run:showGuide},
+    ]),input);
     input.addEventListener('change',async()=>{try{const file=input.files?.[0];if(!file)return;if(file.size>300000)throw new Error('300KB 이하 장면 파일을 선택하세요.');const value=readSceneBundle(JSON.parse(await file.text()),config,context.blocks.at(-1).index);snapshot();drafts=value.scenes;Object.assign(config,value.config);selected=person=0;render();notice('장면을 불러왔습니다. 삽입 위치를 확인하세요.');}catch(e){notice(e.message,true);}finally{input.value='';}});
-    const save=button('초안 저장',async()=>{await onDraft(drafts);dirty=false;status.textContent='초안 저장됨';});
+    const save=button('저장',async()=>{await onDraft(drafts);dirty=false;status.textContent='초안 저장됨';});
     const generate=button('생성',async()=>{await onGenerate(drafts);dirty=false;dialog.close();},true,'fa-wand-magic-sparkles');primary.append(save,generate);
     const headerClose=dialog.querySelector('.ap2-header button'),headerActions=el('div','ap2-actions');headerActions.append(button('설정',()=>generationEditor(config,next=>{for(const s of drafts)if(s.characters.length>MODELS[next.model].characters)throw new Error(`이 모델은 인물 ${MODELS[next.model].characters}명까지 지원합니다.`);snapshot();Object.assign(config,next);render();}),false,'fa-sliders'),button('닫기',()=>closeEditor()));headerClose.replaceWith(headerActions);
     async function closeEditor(){if(editing)return;editing=true;try{if(dirty){const {dialog:ask,body:askBody}=modal('편집 내용');askBody.append(el('p','','저장하지 않은 변경 사항이 있습니다.'));const f=el('footer','ap2-footer');f.append(button('계속 편집',()=>ask.close()),button('저장 없이 닫기',()=>{ask.close();dirty=false;dialog.close();}),button('저장 후 닫기',async()=>{await onDraft(drafts);ask.close();dirty=false;dialog.close();},true));ask.append(f);await new Promise(resolve=>ask.addEventListener('close',resolve,{once:true}));}else dialog.close();}finally{editing=false;}}
@@ -43,7 +47,7 @@ export function composer({context,scenes,config,onAnalyze,onGenerate,onDraft,pre
         sceneBack.disabled=selected===0||!drafts.length;sceneNext.disabled=selected>=drafts.length-1;deleteScene.disabled=!scene();undoButton.disabled=!undo.length;generate.disabled=!drafts.length;renderContent();
     }
     function renderContent(){
-        for(const b of nav.children)b.setAttribute('aria-pressed',String(b.dataset.tab===tab));content.replaceChildren();status.textContent=`${MODELS[config.model].label} · ${config.width} × ${config.height} · ${config.steps} Steps · Seed ${config.seed===-1?'무작위':config.seed}`;
+        for(const b of nav.children)b.setAttribute('aria-pressed',String(b.dataset.tab===tab));content.replaceChildren();status.textContent=`${MODELS[config.model].label} · ${config.width} × ${config.height} · ${config.steps} Steps`;
         if(!scene()){content.append(el('p','ap2-empty','장면을 추가하거나 파일을 가져오세요.'));return;}
         if(tab==='scene')renderScene();if(tab==='cast')renderCast();if(tab==='final')renderFinal();
     }

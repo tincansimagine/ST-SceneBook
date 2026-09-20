@@ -25,7 +25,7 @@
 .ap2-button, .ap2-button.menu_button {
     appearance: none; display: inline-flex; flex-direction: row; align-items: center;
     justify-content: center; gap: 6px; flex: 0 0 auto;
-    width: max-content; min-width: 0; max-width: 100%; min-height: 32px;
+    width: max-content; min-width: 0; max-width: 100%; min-height: 34px;
     margin: 0; padding: 5px 10px; border: 1px solid var(--ap2-border);
     border-radius: 5px; font: inherit; font-size: .85em; font-weight: normal;
     line-height: 1.3; white-space: nowrap; word-break: normal; overflow-wrap: normal;
@@ -88,9 +88,21 @@ details.ap2-group > .ap2-group-content { padding: 0 10px 4px; }
 .ap2-character { padding: 8px 10px; border: 1px solid var(--ap2-border); border-radius: 5px; }
 .ap2-character summary { cursor: pointer; font-size: .86em; }
 .ap2-character[open] > summary { margin-bottom: 10px; }
-.ap2-gallery { display: grid; grid-template-columns: repeat(auto-fill,minmax(min(190px,100%),1fr)); gap: 10px; }
-.ap2-gallery img { width: 100%; aspect-ratio: 3/4; object-fit: cover; border-radius: 5px; margin-bottom: 6px; }
-.ap2-gallery .ap2-button { margin: 2px; }
+.ap2-gallery-toolbar { display: grid; grid-template-columns: minmax(0,1fr) 100px auto; gap: 6px; align-items: center; font-size: .82em; }
+:is(#ap2-settings,.ap2-dialog) .ap2-gallery-toolbar :is(input,select) { height: 34px; padding: 4px 6px; }
+.ap2-gallery { display: grid; grid-template-columns: repeat(auto-fill,minmax(min(100px,100%),1fr)); gap: 12px 8px; }
+.ap2-gallery .ap2-empty { grid-column: 1 / -1; }
+.ap2-gallery-item { appearance: none; display: grid; align-content: start; gap: 5px; width: 100%; min-width: 0; margin: 0; padding: 0; border: 0; border-radius: 5px; color: var(--ap2-fg); background: transparent; font: inherit; text-align: start; cursor: pointer; }
+.ap2-gallery-item:hover img { filter: brightness(.9); }
+.ap2-gallery-item:focus-visible, .ap2-image-open:focus-visible { outline: 2px solid var(--ap2-accent); outline-offset: -3px; }
+.ap2-gallery img { display: block; width: 100%; aspect-ratio: 1; object-fit: cover; border-radius: 5px; }
+.ap2-gallery-title { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-size: .75em; }
+.ap2-gallery-failed { display: grid; place-items: center; aspect-ratio: 1; border: 1px dashed var(--ap2-border); border-radius: 5px; color: var(--ap2-muted); font-size: .8em; }
+.ap2-gallery-pager { display: flex; align-items: center; justify-content: center; gap: 12px; margin-top: 12px; }
+.ap2-action-menu { display: inline-flex; flex: none; }
+.ap2-action-panel { position: fixed; inset: auto; margin: 0; padding: 5px; min-width: 170px; max-width: min(280px,calc(100vw - 16px)); max-height: 60dvh; overflow: auto; border: 1px solid var(--ap2-border); border-radius: 6px; color: var(--ap2-fg); background: var(--ap2-bg); box-shadow: 0 4px 20px #0005; font: inherit; }
+.ap2-action-panel:popover-open { display: flex; flex-direction: column; gap: 3px; }
+.ap2-action-panel .ap2-button { width: 100%; justify-content: flex-start; border-color: transparent; background: transparent; }
 
 /* Dialogs retain ST's typography and theme; only the body scrolls. */
 .ap2-dialog { width: min(820px,94vw); max-height: 90dvh; max-width: 94vw; padding: 0; border: 1px solid var(--ap2-border); border-radius: 8px; background: var(--ap2-bg); color: var(--ap2-fg); box-shadow: 0 10px 40px #0005; }
@@ -106,6 +118,9 @@ details.ap2-group > .ap2-group-content { padding: 0 10px 4px; }
 .ap2-actions [aria-pressed=true] { border-color: var(--ap2-accent); background: var(--ap2-hover); }
 .ap2-excerpt { margin: 8px 0; max-height: 120px; overflow: auto; white-space: pre-wrap; font-size: .85em; line-height: 1.6; border-inline-start: 2px solid var(--ap2-accent); padding: 8px 12px; background: var(--ap2-soft); }
 .ap2-full { display: block; max-width: 100%; max-height: 68dvh; height: auto; margin: 0 auto 12px; }
+.ap2-viewer .ap2-body { padding: 8px; }
+.ap2-viewer .ap2-full { margin-bottom: 0; }
+.ap2-viewer-footer { align-items: center; justify-content: center; flex-wrap: wrap; gap: 8px; }
 .ap2-code { white-space: pre-wrap; overflow-wrap: anywhere; font-size: .8em; line-height: 1.5; }
 .ap2-help-steps { padding-inline-start: 22px; font-size: .9em; line-height: 1.8; overflow-wrap: anywhere; }
 .ap2-help-steps li { margin-bottom: 8px; }
@@ -115,16 +130,15 @@ details.ap2-group > .ap2-group-content { padding: 0 10px 4px; }
 /* Inline illustrations and spatial editor. */
 .ap2-tools { padding: 4px 0; }
 .ap2-tools .ap2-button { font-size: .75em; padding: 3px 8px; min-height: 27px; }
-.ap2-figure { margin: 16px auto; padding: 0; border: 1px solid var(--ap2-border); border-radius: 7px; overflow: hidden; width: 100%; background: var(--ap2-bg); }
+.ap2-figure { margin: 16px auto; padding: 0; border: 0; border-radius: 7px; overflow: hidden; width: 100%; background: transparent; }
 .ap2-figure img { display: block; width: 100%; height: auto; cursor: zoom-in; object-fit: contain; }
 .ap2-image-wrap { position: relative; }
-.ap2-image-actions { position: absolute; top: 8px; right: 8px; display: flex; gap: 5px; }
-.ap2-image-actions .ap2-button { width: 34px; height: 34px; padding: 6px; background: var(--ap2-bg); box-shadow: 0 1px 5px #0005; }
+.ap2-image-open { appearance: none; display: block; width: 100%; min-width: 0; margin: 0; padding: 0; border: 0; background: transparent; line-height: 0; }
+.ap2-image-actions { position: absolute; bottom: 8px; right: 8px; display: flex; align-items: center; gap: 2px; padding: 2px; border-radius: 6px; color: white; background: #151515b8; box-shadow: 0 1px 5px #0003; }
+.ap2-image-actions .ap2-button { width: 34px; height: 34px; min-height: 34px; padding: 6px; color: white; background: transparent; border: 0; box-shadow: none; }
+.ap2-image-actions .ap2-button:hover { background: #ffffff26; }
 .ap2-image-actions .ap2-button > span:empty { display: none; }
-.ap2-image-more > summary { cursor: pointer; font-size: .85em; padding: 5px 0; color: var(--ap2-muted); }
-.ap2-figure figcaption { padding: 10px; font-size: .86em; }
-.ap2-figure .ap2-actions { margin: 6px 0 0; }
-.ap2-figure .ap2-button { font-size: .85em; min-height: 28px; padding: 4px 7px; }
+.ap2-version-count { font: 12px/1.2 system-ui,sans-serif; min-width: 24px; text-align: center; color: white; }
 .ap2-placement { margin: 10px 0; padding: 10px; border: 1px solid var(--ap2-border); border-radius: 5px; }
 .ap2-placement h4 { margin: 0 0 6px; font-size: .95em; }
 .ap2-position-choices { display: flex; gap: 5px; flex-wrap: wrap; margin: 8px 0; }
@@ -158,10 +172,10 @@ details.ap2-group > .ap2-group-content { padding: 0 10px 4px; }
 .ap2-editor-toolbar > .ap2-field > span { white-space: nowrap; }
 .ap2-editor-toolbar > .ap2-field:nth-child(2) { flex: 2 1 160px; }
 .ap2-editor-toolbar > .ap2-actions { flex: 0 0 auto; margin: 0; }
-.ap2-button.ap2-icon-button { width: 32px; height: 32px; padding: 6px; }
+.ap2-button.ap2-icon-button { width: 34px; height: 34px; padding: 6px; }
 .ap2-icon-button > span:empty { display: none; }
 .ap2-editor-tabs { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 8px; margin: 16px 0; }
-.ap2-editor-tabs .ap2-button { width: 100%; min-height: 44px; border: 1px solid var(--ap2-border); border-radius: 6px; padding: 8px 6px; background: var(--ap2-soft); }
+.ap2-editor-tabs .ap2-button { width: 100%; min-height: 34px; border: 1px solid var(--ap2-border); border-radius: 6px; padding: 6px; background: var(--ap2-soft); }
 .ap2-editor-tabs .ap2-button[aria-pressed=true] { border-color: var(--ap2-accent); background: color-mix(in srgb,var(--ap2-accent) 18%,transparent); font-weight: 600; }
 .ap2-anchor { margin: 16px 0; }
 .ap2-anchor-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; font-size: .86em; }
@@ -177,10 +191,10 @@ details.ap2-group > .ap2-group-content { padding: 0 10px 4px; }
 .ap2-workflow { border: 1px solid var(--ap2-border); border-radius: 6px; padding: 2px 12px 10px; margin: 10px 0; }
 .ap2-workflow .ap2-check { min-height: 36px; }
 .ap2-workflow-status { margin: 6px 0 0; overflow-wrap: anywhere; }
-@media(max-width:600px) { .ap2-dialog .ap2-button, .ap2-dialog .ap2-icon-button { min-height: 44px; } .ap2-dialog .ap2-icon-button { min-width: 44px; } .ap2-editor-footer > .ap2-actions { gap: 8px; } }
+@media(pointer:coarse) { :is(#ap2-settings,.ap2-dialog,.ap2-figure) .ap2-button { min-height: 38px; } :is(#ap2-settings,.ap2-dialog,.ap2-figure) .ap2-icon-button { min-width: 38px; height: 38px; } :is(#ap2-settings,.ap2-dialog) .ap2-gallery-toolbar :is(input,select) { height: 38px; } }
 .ap2-editor-content { min-height: 240px; }
 .ap2-editor-content .ap2-field-wide { margin: 12px 0; }
-.ap2-editor-footer { justify-content: space-between; align-items: center; flex-wrap: wrap; }
+.ap2-editor-footer { justify-content: space-between; align-items: center; flex-wrap: nowrap; }
 .ap2-editor-footer .ap2-actions { margin: 0; }
 .ap2-editor-footer > .ap2-actions:last-child { margin-inline-start: auto; }
 .ap2-cast-layout { display: grid; grid-template-columns: minmax(210px,.8fr) minmax(0,1.2fr); gap: 22px; align-items: start; }
@@ -211,4 +225,4 @@ details.ap2-group > .ap2-group-content { padding: 0 10px 4px; }
 .ap2-import-table th, .ap2-import-table td { text-align: start; padding: 5px 8px; border-bottom: 1px solid var(--ap2-border); overflow-wrap: anywhere; }
 .ap2-import-table th { width: 40%; font-weight: normal; color: var(--ap2-muted); }
 .ap2-import-warnings { font-size: .85em; line-height: 1.65; padding-inline-start: 20px; }
-@media(max-width:650px) { .ap2-cast-layout { grid-template-columns: 1fr; gap: 12px; } .ap2-cast-editor { display: contents; } .ap2-cast-list { grid-row: 1; } .ap2-cast-visual { grid-row: 2; } .ap2-cast-fields { grid-row: 3; } .ap2-cast-visual .ap2-position-board { height: 220px; width: auto; max-width: calc(100% - 32px) !important; } .ap2-editor-toolbar > .ap2-field { flex-basis: 130px; } .ap2-editor-footer { padding: 10px; } .ap2-editor-footer .ap2-actions { gap: 4px; } .ap2-editor-footer .ap2-button { font-size: .75em; padding: 5px 7px; } .ap2-cast-list .ap2-button { max-width: 150px; } }
+@media(max-width:650px) { .ap2-cast-layout { grid-template-columns: 1fr; gap: 12px; } .ap2-cast-editor { display: contents; } .ap2-cast-list { grid-row: 1; } .ap2-cast-visual { grid-row: 2; } .ap2-cast-fields { grid-row: 3; } .ap2-cast-visual .ap2-position-board { height: 220px; width: auto; max-width: calc(100% - 32px) !important; } .ap2-editor-toolbar > .ap2-field { flex-basis: 130px; } .ap2-editor-footer { padding: 10px; } .ap2-editor-footer .ap2-actions { flex-wrap: nowrap; gap: 6px; } .ap2-cast-list .ap2-button { max-width: 150px; } }

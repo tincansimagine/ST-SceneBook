@@ -78,7 +78,9 @@ export function normalizeMetadata(fields,dimensions={}){
     if(typeof prompt!=='string'||!prompt.trim()||prompt.length>12000)throw new Error('NovelAI 생성 프롬프트를 찾을 수 없습니다.');
     const patch={},warnings=[],unsupported=[];
     const model=metadataModel(fields.Source,p.model);if(model)patch.model=model;else warnings.push('모델을 확정할 수 없습니다. 적용할 모델을 직접 선택하세요.');
-    const numeric=[['width','width',64,2048,true],['height','height',64,2048,true],['steps','steps',1,50,true],['scale','scale',0,10,false],['cfg_rescale','cfgRescale',0,1,false],['seed','seed',0,4294967295,true]];
+    // Image seeds are provenance, not settings to import. Some writers store
+    // larger seeds or strings; neither should prevent importing the prompt.
+    const numeric=[['width','width',64,2048,true],['height','height',64,2048,true],['steps','steps',1,50,true],['scale','scale',0,10,false],['cfg_rescale','cfgRescale',0,1,false]];
     for(const [from,to,min,max,integer]of numeric){const value=p[from]??(['width','height'].includes(from)?dimensions[from]:undefined);if(value===undefined)continue;if(typeof value!=='number'||!Number.isFinite(value)||value<min||value>max||(integer&&!Number.isInteger(value)))throw new Error(`${from}: 지원 범위를 벗어난 이미지 설정입니다.`);patch[to]=value;}
     if(p.sampler!==undefined){if(!SAMPLERS.includes(p.sampler))warnings.push(`지원하지 않는 샘플러: ${String(p.sampler).slice(0,100)}. 현재 샘플러를 유지합니다.`);else patch.sampler=p.sampler;}
     if(p.noise_schedule!==undefined){if(!['karras','native','exponential','polyexponential'].includes(p.noise_schedule))warnings.push('지원하지 않는 스케줄러는 적용하지 않습니다.');else patch.scheduler=p.noise_schedule;}
@@ -105,9 +107,9 @@ export function normalizeMetadata(fields,dimensions={}){
     if(!model?.startsWith('nai-diffusion-5-')&&!patch.scheduler)warnings.push('스케줄러 정보가 없어 현재 값을 사용합니다.');
     return{patch,scene,source:String(fields.Source??p.model??'모델 정보 없음').slice(0,300),warnings};
 }
-export function importedConfig(current,result,{model=result.patch.model,seed=true,relaxBudget=false,forScene=true}={}){
+export function importedConfig(current,result,{model=result.patch.model,relaxBudget=false,forScene=true}={}){
     if(!model||!Object.hasOwn(MODELS,model))throw new Error('적용할 이미지 모델을 선택하세요.');
-    const patch={...result.patch,model};if(!seed)delete patch.seed;
+    const patch={...result.patch,model};delete patch.seed;
     const next={...current,...patch,budgetGuard:relaxBudget?false:current.budgetGuard};
     if(model.startsWith('nai-diffusion-5-')&&!patch.scheduler)next.scheduler='karras';
     if(!model.startsWith('nai-diffusion-5-')&&patch.transparent===undefined)next.transparent=false;

@@ -42,33 +42,33 @@ export function renderInjection(config) {
     return (validateInjectionTemplate(config.injectionPrompt ?? '') || DEFAULT_INJECTION_PROMPT).replace(/\{\{(\w+)\}\}/g, (_, key) => values[key]);
 }
 
-// Only our standalone comment blocks outside fenced examples are consumed.
+// Read our marker independently of how the model wraps JSON or breaks lines.
+// Ordinary fenced code examples remain untouched.
 export function extractInjectedPlan(source) {
-    const lines = String(source).split('\n'), kept = [], blocks = [];
-    let fence = '', pending = null;
-    for (const line of lines) {
-        if (pending) {
-            if (/^\s*-->\s*$/.test(line)) { blocks.push(pending.join('\n')); pending = null; }
-            else pending.push(line);
-            continue;
-        }
-        const marker = line.match(/^\s*(`{3,}|~{3,})/);
-        if (marker) {
-            if (!fence) fence = marker[1];
-            else if (marker[1][0] === fence[0] && marker[1].length >= fence.length) fence = '';
-        }
-        if (!fence && /^\s*<!--scenebook\s*$/.test(line)) { pending = []; continue; }
-        const single = !fence && line.match(/^\s*<!--scenebook\s+(\{.*\})\s*-->\s*$/);
-        if (single) blocks.push(single[1]); else kept.push(line);
+    source=String(source);
+    const tokens=/^ {0,3}(`{3,}|~{3,})[^\n]*|<!--\s*scenebook\b\s*:?\s*/gim;
+    const blocks=[],kept=[];let fence='',cursor=0,match;
+    while((match=tokens.exec(source))){
+        if(match[1]){if(!fence)fence=match[1];else if(match[1][0]===fence[0]&&match[1].length>=fence.length)fence='';continue;}
+        if(fence)continue;
+        const end=source.indexOf('-->',tokens.lastIndex);
+        if(end<0)return{source,found:true,value:null,incomplete:true,raw:source.slice(match.index),error:'삽화 지시가 끝나기 전에 답변이 종료되었습니다.'};
+        kept.push(source.slice(cursor,match.index));
+        blocks.push({raw:source.slice(match.index,end+3),json:source.slice(tokens.lastIndex,end).trim()});
+        cursor=tokens.lastIndex=end+3;
     }
-    // An incomplete marker may be a stopped stream; keep it untouched.
-    if (pending) kept.push('<!--scenebook', ...pending);
-    if (!blocks.length) return { source, found: false, value: null };
-    const cleaned = kept.join('\n').trimEnd();
+    if(!blocks.length)return{source,found:false,value:null};
+    kept.push(source.slice(cursor));
+    const cleaned=kept.join('').trimEnd(),raw=blocks.map(b=>b.raw).join('\n');
     try {
-        if (blocks.length !== 1 || blocks[0].length > 60000) throw new Error('주입 장면 블록의 개수나 길이가 올바르지 않습니다.');
-        return { source: cleaned, found: true, value: JSON.parse(blocks[0]) };
-    } catch (error) { return { source: cleaned, found: true, value: null, error: error.message }; }
+        if(raw.length>60000||blocks.length>6)throw new Error('삽화 지시의 개수나 길이가 너무 큽니다.');
+        const values=blocks.map(block=>{
+            const wrapped=block.json.match(/^(`{3,}|~{3,})(?:json)?\s*\n([\s\S]*?)\n\1\s*$/i);
+            return JSON.parse(wrapped?wrapped[2]:block.json);
+        });
+        if(values.some(v=>!Array.isArray(v?.scenes)))throw new Error('삽화 지시에 scenes 목록이 없습니다.');
+        return{source:cleaned,found:true,value:{scenes:values.flatMap(v=>v.scenes)},raw};
+    }catch(error){return{source:cleaned,found:true,value:null,raw,error:error.message};}
 }
 export function injectedScenes(value, source, config) {
     if (!Array.isArray(value?.scenes) || value.scenes.length > config.maxScenes) throw new Error('주입 장면의 수가 설정과 맞지 않습니다.');

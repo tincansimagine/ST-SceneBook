@@ -12,7 +12,7 @@ import { WorkQueue } from './src/queue.mjs';
 import { downloadChat } from './src/export.mjs';
 import { mergeRevision } from './src/revision.mjs';
 import { timelineInstruction,validateTimeline,resolveAt } from './src/timeline.mjs';
-import { el, button, notice, studio, composer, inspect, viewer, modal, mountSettings, compareVersions } from './src/ui.mjs';
+import { el, button, iconButton, notice, studio, composer, inspect, viewer, modal, mountSettings, compareVersions } from './src/ui.mjs';
 
 const KEY = 'autopic2';
 const context = () => SillyTavern.getContext();
@@ -23,7 +23,7 @@ const rendered = new WeakMap();
 const checkHealth=createHealthCheck(()=>request('health'));
 let workflowStatus = '';
 function setWorkflowStatus(value) { workflowStatus = value; updateBadge(); }
-const automatic = new AutomaticResponses({scope, message:index=>context().chat[index], aborted:()=>!!context().streamingProcessor?.abortController?.signal.aborted,
+const automatic = new AutomaticResponses({scope, message:index=>context().chat[index], abortSignal:()=>context().streamingProcessor?.abortController?.signal, read:extractInjectedPlan, waitForRender:!!context().eventTypes.CHARACTER_MESSAGE_RENDERED,
     run:processAutomatic, error:e=>{setWorkflowStatus(e.message);notice(`자동 처리 실패 · ${e.message}`,true);}});
 
 function settings() { return { ...structuredClone(DEFAULTS), ...context().extensionSettings[KEY] }; }
@@ -187,7 +187,8 @@ async function compose(index=lastIndex(),manual=true,initial=null,slotId=null,re
     const state=viewState(target),saved=state.draft;
     if(renderConfig)target.config={...target.config,...renderConfig};
     else if(!initial&&saved.length&&state.draftConfig)target.config={...target.config,...generationConfig(validateConfig({...target.config,...state.draftConfig}))};
-    const scenes=initial??(saved.length?saved:manual?[{title:'새 장면',prompt:'',after:target.snapshot.blocks.at(-1).index,characters:[]}]:await analyze(target));
+    const embedded=state.injected?.value??extractInjectedPlan(target.snapshot.source).value;
+    const scenes=initial??(saved.length?saved:manual?(embedded?injectedScenes(embedded,target.snapshot.source,target.config):[{title:'새 장면',prompt:'',after:target.snapshot.blocks.at(-1).index,characters:[]}]):await analyze(target));
     const slot=viewState(target).slots.find(x=>x.id===slotId),previewUrl=slot?.versions?.[slot.selected]?.url;
     composer({context:target.snapshot,scenes,config:target.config,previewUrl,onAnalyze:(old,direction,scope)=>analyze(target,old,direction,scope),onGenerate:s=>enqueue(target,s,slotId),onDraft:async s=>{if(!current(target))throw new Error('편집 중 채팅이 변경됐습니다. 다시 열어 주세요.');viewState(target).draft=s;viewState(target).draftConfig=generationConfig(target.config);await saveMessage(target);}});
 }
@@ -196,6 +197,25 @@ function updateBadge() {
     const b=document.getElementById('ap2-status');if(!b)return;
     const waiting=queue.items.filter(x=>x.state==='waiting').length;
     b.textContent=analysisLocks.size?'분석 중':queue.running?`생성 중${waiting?` +${waiting}`:''}`:queue.paused?'일시정지':'';
+}
+function openIllustration(index,slot) {
+    const target=capture(index),job=slot.versions[slot.selected];
+    if(!viewState(target,false)?.slots.includes(slot))throw new Error('대상 답변이 바뀌었습니다. 이미지를 다시 열어 주세요.');
+    const ensureCurrent=()=>{if(!current(target))throw new Error('대상 답변이 바뀌었습니다. 이미지를 다시 열어 주세요.');return context().chat.indexOf(target.message);};
+    viewer(job,{
+        actions:[
+            {label:'편집',icon:'fa-sliders',close:true,run:()=>compose(ensureCurrent(),true,[job.scene],slot.id,{...job.config,seed:job.seed})},
+            {label:'재생성',icon:'fa-rotate-right',close:true,run:()=>{ensureCurrent();return enqueue(target,[job.scene],slot.id,{...job.config,seed:-1});}},
+        ],
+        more:[
+            {label:'AI 검수',icon:'fa-magnifying-glass',run:()=>reviewImage(job)},
+            {label:'생성 기록',icon:'fa-file-lines',run:()=>inspect(job)},
+            ...(slot.versions.length>1?[{label:'버전 비교',icon:'fa-columns',run:()=>compareVersions(slot.versions,slot.selected)}]:[]),
+            {label:'같은 시드로 생성',run:()=>{ensureCurrent();return enqueue(target,[job.scene],slot.id,{...job.config,seed:job.seed});}},
+            {label:'기본 시드로 저장',run:()=>{saveSettings({...settings(),seed:job.seed});notice(`Seed ${job.seed} 저장됨`);}},
+            {label:'숨기기',icon:'fa-eye-slash',close:true,run:async()=>{ensureCurrent();slot.hidden=true;await saveMessage(target);notice('그림을 숨겼습니다. 갤러리에서 다시 삽입할 수 있습니다.');}},
+        ],
+    });
 }
 function renderMessage(index) {
     const c=context(),m=c.chat[index];if(!c.getCurrentChatId()||!m||m.is_user||m.is_system)return;
@@ -212,18 +232,15 @@ function renderMessage(index) {
         const job=slot.versions?.[slot.selected];if(!job||!safeImagePath(job.url))continue;
         const figure=el('figure','ap2-figure');figure.style.maxWidth=`${config.compact?Math.min(360,config.displayWidth):config.displayWidth}px`;
         const image=el('img');image.src=job.url;image.alt=job.scene.title;image.loading='lazy';image.width=job.config.width;image.height=job.config.height;
-        image.addEventListener('click',()=>viewer(job));
         const imageWrap=el('div','ap2-image-wrap'),overlay=el('div','ap2-image-actions');
-        for(const [label,icon,action]of [['편집','fa-gear',()=>compose(index,true,[job.scene],slot.id,{...job.config,seed:job.seed})],['재생성','fa-rotate-right',()=>enqueue(capture(index),[job.scene],slot.id,{...job.config,seed:-1})]]){const b=button('',action,false,icon);b.title=label==='재생성'?'새 시드로 재생성':'프롬프트·배치 편집';b.setAttribute('aria-label',label);overlay.append(b);}
-        imageWrap.append(image,overlay);figure.append(imageWrap);
-        const caption=el('figcaption');caption.append(el('strong','',job.scene.title));
-        const actions=el('div','ap2-actions');
-        actions.append(button('←',async()=>{slot.selected=(slot.selected-1+slot.versions.length)%slot.versions.length;await saveMessage(capture(index));}),el('span','ap2-muted',`${slot.selected+1} / ${slot.versions.length}`),button('→',async()=>{slot.selected=(slot.selected+1)%slot.versions.length;await saveMessage(capture(index));}));
-        actions.append(button('같은 시드',()=>enqueue(capture(index),[job.scene],slot.id,{...job.config,seed:job.seed})),button('시드 사용',()=>{saveSettings({...settings(),seed:job.seed});notice(`Seed ${job.seed}를 다음 생성의 기본값으로 저장했습니다. 기존 초안은 편집기의 설정에서 바꿀 수 있습니다.`);}));
-        const more=el('details','ap2-image-more'),moreActions=el('div','ap2-actions');more.append(el('summary','','도구'),moreActions);
-        moreActions.append(button('새 시드',()=>enqueue(capture(index),[job.scene],slot.id,{...job.config,seed:-1})),button('수정',()=>compose(index,true,[job.scene],slot.id,{...job.config,seed:job.seed})),button('AI 검수',()=>reviewImage(job)),button('기록',()=>inspect(job)),button('숨기기',async()=>{slot.hidden=true;await saveMessage(capture(index));notice('그림을 숨겼습니다. 갤러리에는 원본이 남습니다.');}));
-        if(slot.versions.length>1)moreActions.append(button('비교',()=>compareVersions(slot.versions,slot.selected)));
-        caption.append(actions,more);figure.append(caption);
+        overlay.setAttribute('aria-label','삽화 도구');
+        const open=button('',()=>openIllustration(index,slot));open.className='ap2-image-open';open.setAttribute('aria-label',`${job.scene.title} · 이미지 보기`);open.replaceChildren(image);
+        if(slot.versions.length>1){
+            const change=async delta=>{const target=capture(index);if(!viewState(target,false)?.slots.includes(slot))throw new Error('대상 답변이 바뀌었습니다.');slot.selected=(slot.selected+delta+slot.versions.length)%slot.versions.length;await saveMessage(target);};
+            overlay.append(iconButton('이전 그림','fa-chevron-left',()=>change(-1)),el('span','ap2-version-count',`${slot.selected+1}/${slot.versions.length}`),iconButton('다음 그림','fa-chevron-right',()=>change(1)));
+        }
+        overlay.append(iconButton('삽화 도구','fa-gear',()=>openIllustration(index,slot)));
+        imageWrap.append(open,overlay);figure.append(imageWrap);
         const candidates=[...content.querySelectorAll('p')].filter(p=>!p.closest('details,pre,table,.ap2-figure'));
         const anchor=config.placement==='inline'?candidates.find(p=>normalized(p.textContent)===normalized(slot.anchor.quote.replace(/[*_]/g,''))):null;
         if(anchor)anchor.after(figure);else content.append(figure);
@@ -233,6 +250,7 @@ function renderMessage(index) {
 function scheduleRender() {clearTimeout(renderTimer);renderTimer=setTimeout(()=>{document.querySelectorAll('#chat .mes[mesid]').forEach(n=>renderMessage(Number(n.getAttribute('mesid'))));},80);}
 function clearInjection(){context().setExtensionPrompt?.('scenebook-illustrations','',1,0,false,0);}
 function injectPrompt(type,options,dryRun){
+    if(dryRun)return;
     clearInjection();
     const c=visualSettings();
     if(dryRun||['quiet','impersonate'].includes(type)||!context().getCurrentChatId()||!c.promptInjection||c.automatic==='off')return;
@@ -243,39 +261,63 @@ async function processAutomatic(candidate) {
     const ctx=context(),index=ctx.chat.indexOf(candidate.message),c=settings();
     if(!workflowEnabled(c)||index<0||candidate.scope!==scope())return;
     let target=capture(index),state=viewState(target);
-    if(state.automatic?.source===target.snapshot.source)return;
-    receivedCount++;
+    if(state.automatic?.source===target.snapshot.source&&state.automatic.status!=='missing')return;
     // Keep generated planning out of the visible reply and subsequent chat context,
     // even on replies skipped by the interval. Store it against this exact swipe.
-    const embedded=extractInjectedPlan(target.snapshot.source);
-    if(embedded.found){
+    let embedded=extractInjectedPlan(target.snapshot.source);
+    if(!embedded.found){
+        if(state.injected?.found)embedded=state.injected;
+        else if(candidate.embedded?.found&&candidate.embedded.source===target.snapshot.source.trimEnd())embedded=candidate.embedded;
+    }
+    if(embedded.found&&!embedded.incomplete&&embedded.source!==target.snapshot.source){
         const message=target.message;
         message.mes=embedded.source;
         if(Array.isArray(message.swipes))message.swipes[message.swipe_id??0]=message.mes;
         target=capture(index);state=viewState(target);
-        state.injected=embedded;
         ctx.updateMessageBlock?.(index,message,{rerenderMessage:true});
-        await saveMessage(target);
     }
-    if((receivedCount-1)%c.every){setWorkflowStatus(`답변 간격 ${c.every} · 이번 답변 건너뜀`);return;}
-    if(!embedded.found){setWorkflowStatus('답변에 삽화 지시 없음');return;}
-    if(c.automatic==='generate'){
-        const health=await checkHealth();if(!health.hasKey)throw new Error('SillyTavern에서 NovelAI 키를 먼저 저장하세요.');
-        if(sessionRequests>=c.sessionLimit)throw new Error('이번 접속의 생성 요청 한도에 도달했습니다.');
-        if(queue.paused)throw new Error('생성 대기열이 일시정지되어 있습니다. 작업 탭에서 확인하세요.');
-    }
+    if(state.automatic?.source===target.snapshot.source&&state.automatic.status!=='missing')return;
+    if(embedded.found)state.injected=embedded;
+    state.automaticOrder??=++receivedCount;
+    if(!embedded.found){state.automatic={source:target.snapshot.source,status:'missing'};setWorkflowStatus('이 답변에서 삽화 지시를 찾지 못했습니다.');await saveMessage(target);return;}
     if(!current(target)||!workflowEnabled(settings())||candidate.generation?.stopped)return;
-    // Never replay an uncertain paid analysis automatically. Manual editing can retry.
+    // Save the plan before any network work, and remember every exit reason.
+    // A later render of the cleaned message must not discard or replay this plan.
     state.automatic={source:target.snapshot.source,status:'reading'};
     try{
-        if(!embedded.value)throw new Error('AI가 작성한 삽화 지시 형식을 읽을 수 없습니다. 장면 편집에서 확인하세요.');
+        await saveMessage(target);
+        if(!embedded.value)throw new Error(`삽화 지시를 읽지 못했습니다: ${embedded.error??'JSON 형식 오류'} · 작업 → 지시 기록에서 확인하세요.`);
         const scenes=injectedScenes(embedded.value,target.snapshot.source,target.config);
-        state.draft=scenes;state.draftConfig=generationConfig(target.config);await saveMessage(target);
+        state.draft=scenes;state.draftConfig=generationConfig(target.config);
+        if((state.automaticOrder-1)%c.every){state.automatic.status='skipped';state.automatic.error=`답변 간격 ${c.every} · 이번 답변 건너뜀`;setWorkflowStatus(state.automatic.error);await saveMessage(target);return;}
+        if(c.automatic==='generate'&&scenes.length){
+            if(sessionRequests>=c.sessionLimit)throw new Error('이번 접속의 생성 요청 한도에 도달했습니다.');
+            if(queue.paused)throw new Error('생성 대기열이 일시정지되어 있습니다. 작업 탭에서 확인하세요.');
+        }
         if(!current(target)||!workflowEnabled(settings())||candidate.generation?.stopped){state.automatic.status='cancelled';return;}
         if(settings().automatic==='generate'&&scenes.length){target.automaticCandidate=candidate;await enqueue(target,scenes);state.automatic.status='queued';}
         else {state.automatic.status='ready';setWorkflowStatus(scenes.length?`장면 ${scenes.length}개 준비됨 · 장면 편집에서 확인`:'이번 답변에는 삽화에 적합한 장면이 없습니다.');notice(scenes.length?`장면 ${scenes.length}개 준비됨 · 장면 편집에서 확인`:'이번 답변에는 생성할 삽화가 없습니다.');}
         await saveMessage(target);
     }catch(e){state.automatic.status='failed';state.automatic.error=e.message;if(current(target))await saveMessage(target);throw e;}
+}
+function showPlans(){
+    const {body}=modal('지시 기록','현재 채팅 · 최근 20개 답변');
+    const labels={reading:'처리 중',queued:'생성 요청됨',ready:'초안 저장됨',missing:'지시 없음',failed:'처리 실패',skipped:'간격에 따라 건너뜀',cancelled:'중단됨'};
+    const records=context().chat.map((message,index)=>({message,index,state:message.extra?.[KEY]?.views?.[sourceKey(message.mes,message.swipe_id??0)]})).filter(r=>r.state?.injected||r.state?.automatic).slice(-20).reverse();
+    if(!records.length)body.append(el('p','ap2-empty','저장된 지시가 없습니다. 다음 답변부터 처리 결과가 남습니다.'));
+    for(const {message,index,state}of records){
+        const row=el('details','ap2-guide-topic'),status=state.automatic?.status;
+        row.append(el('summary','',`답변 ${index+1} · ${labels[status]??'지시 저장됨'}`));
+        if(state.automatic?.error)row.append(el('p','',state.automatic.error));
+        if(state.injected){
+            row.append(el('pre','ap2-code',state.injected.raw??JSON.stringify(state.injected.value??{error:state.injected.error},null,2)));
+            if(state.draft?.length||state.injected.value){
+                const expectedScope=scope(),source=message.mes,swipe=message.swipe_id??0;
+                row.append(button('장면 편집',()=>{const currentIndex=context().chat.indexOf(message);if(expectedScope!==scope()||currentIndex<0||message.mes!==source||(message.swipe_id??0)!==swipe)throw new Error('답변이 바뀌었습니다. 지시 기록을 다시 열어 주세요.');return compose(currentIndex);}));
+            }
+        }
+        body.append(row);
+    }
 }
 const api={settings,saveSettings,visualSettings,hasVisualOverride:()=>!!context().chatMetadata?.[KEY]?.visual,
     contextKey:scope,status:()=>analysisLocks.size?'답변 분석 중':queue.running?'삽화 생성 중':queue.paused?'생성 일시정지':workflowStatus,
@@ -285,8 +327,9 @@ const api={settings,saveSettings,visualSettings,hasVisualOverride:()=>!!context(
     references:async()=>(await request('references')).references,uploadReference:value=>request('references',value),
     importScene:async(scene,config)=>{const target=capture();return compose(target.index,true,[{...scene,after:target.snapshot.blocks.at(-1).index,evidence:''}],null,generationConfig(config));},
     compose,analyze:()=>compose(lastIndex(),false),health:force=>checkHealth(force),account:()=>request('account'),jobs:async()=>(await request('jobs')).jobs,
+    showPlans,chatImages:()=>context().chat.flatMap(message=>Object.values(message.extra?.[KEY]?.views??{}).flatMap(view=>(view.slots??[]).flatMap(slot=>slot.versions??[]))),
     settingsHistory:()=>settingsHistory(context().extensionSettings),restoreSettings:value=>{const currentValue=settings();preserveSettings(context().extensionSettings,cleanSettings({...currentValue,...value}),{reason:'복구 전',force:true});context().saveSettingsDebounced();document.dispatchEvent(new Event('scenebook-settings-changed'));if(!workflowEnabled(settings())){clearInjection();automatic.stop();queue.cancelWaiting(item=>item.automatic);}},
-    isImage:safeImagePath,review:reviewImage,queue:()=>queue.items,usage:()=>sessionRequests,toggleQueue:()=>queue.toggle(),cancelQueue:()=>queue.cancelWaiting(),
+    isImage:safeImagePath,review:reviewImage,queue:()=>queue.items,queuePaused:()=>queue.paused,usage:()=>sessionRequests,toggleQueue:()=>queue.toggle(),cancelQueue:()=>queue.cancelWaiting(),
     profiles:()=>context().extensionSettings.connectionManager?.profiles??[],character:()=>context().characters?.[context().characterId],
     importSettings:value=>{if(value.schema!==1||!value.settings)throw new Error('씬북 설정 파일이 아닙니다.');saveSettings({...value.settings,automatic:'off'});},
     recover:async job=>{const target=capture();const copy=structuredClone(job);copy.scene.after=target.snapshot.blocks.at(-1).index;copy.scene.evidence='';await attach(target,copy);notice('마지막 답변 아래에 삽입했습니다.');},
@@ -296,9 +339,17 @@ function initialize() {
     const container=document.getElementById('extensions_settings2')??document.getElementById('extensions_settings');
     if(container&&!document.getElementById('ap2-settings'))mountSettings(api,container);
     for(const name of ['CHARACTER_MESSAGE_RENDERED','MESSAGE_UPDATED','MESSAGE_SWIPED','MESSAGE_DELETED','CHAT_CHANGED'])if(c.eventTypes[name])c.eventSource.on(c.eventTypes[name],()=>{if(name==='CHAT_CHANGED'){automatic.reset();receivedCount=0;clearInjection();queue.cancelWaiting();setWorkflowStatus('');}scheduleRender();});
-    c.eventSource.on(c.eventTypes.MESSAGE_RECEIVED,(index,type)=>automatic.receive(index,type));
+    const receive=(index,type)=>automatic.receive(index,type),finalize=(index,type)=>automatic.receive(index,type,true);
+    // Capture the hidden plan before other extensions modify the reply, then
+    // observe the finalized body after their render handlers have completed.
+    if(c.eventSource.makeFirst)c.eventSource.makeFirst(c.eventTypes.MESSAGE_RECEIVED,receive);else c.eventSource.on(c.eventTypes.MESSAGE_RECEIVED,receive);
+    if(c.eventTypes.CHARACTER_MESSAGE_RENDERED){if(c.eventSource.makeLast)c.eventSource.makeLast(c.eventTypes.CHARACTER_MESSAGE_RENDERED,finalize);else c.eventSource.on(c.eventTypes.CHARACTER_MESSAGE_RENDERED,finalize);}
     c.eventSource.on(c.eventTypes.GENERATION_ENDED,()=>{clearInjection();automatic.end();});
     if(c.eventTypes.GENERATION_STARTED)c.eventSource.on(c.eventTypes.GENERATION_STARTED,(type,options,dryRun)=>{automatic.start(type,dryRun);try{injectPrompt(type,options,dryRun);}catch(e){setWorkflowStatus(e.message);}});
+    if(c.eventTypes.GENERATION_AFTER_COMMANDS){
+        const restoreInjection=(type,options,dryRun)=>{try{injectPrompt(type,options,dryRun);}catch(e){setWorkflowStatus(e.message);}};
+        if(c.eventSource.makeLast)c.eventSource.makeLast(c.eventTypes.GENERATION_AFTER_COMMANDS,restoreInjection);else c.eventSource.on(c.eventTypes.GENERATION_AFTER_COMMANDS,restoreInjection);
+    }
     if(c.eventTypes.GENERATION_STOPPED)c.eventSource.on(c.eventTypes.GENERATION_STOPPED,()=>{automatic.stop();clearInjection();});
     if(c.SlashCommandParser&&c.SlashCommand)c.SlashCommandParser.addCommandObject(c.SlashCommand.fromProps({name:'scenebook',callback:()=>{studio(api);return '';},helpString:'씬북 설정을 엽니다.'}));
     scheduleRender();

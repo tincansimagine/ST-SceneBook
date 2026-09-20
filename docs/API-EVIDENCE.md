@@ -1,5 +1,11 @@
 # API 근거와 검증 범위
 
+## 0.4.4 변경 범위
+
+- 이번 수정은 사용자 요청에 따라 실행 테스트·브라우저 QA·유료 API 요청 없이 작성했다. 아래의 과거 검증 기록을 0.4.4 검증 결과로 해석하지 않는다.
+- 로컬 ST `public/script.js`의 스트리밍/일반 응답 경로와 `public/lib/eventemitter.js`를 읽어 수신→렌더, 종료→수신 순서와 `makeFirst`/`makeLast` API를 대조했다. 실제 모바일 조합의 동작 확인은 남아 있다.
+- PNG seed는 정규화와 적용 양쪽에서 제외한다. 서버 API와 플러그인 파일은 변경하지 않으며 기존 0.4.2 이상 서버를 그대로 사용한다.
+
 확인일: 2026-09-20~21.
 
 - NovelAI 모델 안내: https://docs.novelai.net/en/image/models/

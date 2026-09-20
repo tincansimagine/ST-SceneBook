@@ -22,6 +22,28 @@ export function button(label, action, primary = false, icon = '') {
         try { const result=action();if(result?.then){b.disabled=true;try{await result;}finally{b.disabled=false;}} } catch (e) { notice(e.message, true); }
     }); return b;
 }
+export function iconButton(label, icon, action) {
+    const b=button('',action,false,icon);b.classList.add('ap2-icon-button');
+    b.title=label;b.setAttribute('aria-label',label);return b;
+}
+// Native popovers stay above the scrolling dialog and dismiss on outside click.
+export function actionMenu(actions,label='더 보기') {
+    const wrap=el('div','ap2-action-menu'),panel=el('div','ap2-action-panel');panel.setAttribute('popover','auto');
+    const trigger=iconButton(label,'fa-ellipsis',()=>{
+        if(panel.matches(':popover-open')){panel.hidePopover();return;}
+        panel.showPopover();const r=trigger.getBoundingClientRect(),p=panel.getBoundingClientRect();
+        panel.style.left=`${Math.max(8,Math.min(r.right-p.width,innerWidth-p.width-8))}px`;
+        panel.style.top=`${Math.max(8,r.top>p.height+8?r.top-p.height-6:Math.min(r.bottom+6,innerHeight-p.height-8))}px`;
+    });
+    panel.id=`ap2-menu-${crypto.randomUUID()}`;trigger.setAttribute('aria-controls',panel.id);trigger.setAttribute('aria-expanded','false');
+    let events;
+    panel.addEventListener('toggle',()=>{
+        events?.abort();const open=panel.matches(':popover-open');trigger.setAttribute('aria-expanded',String(open));
+        if(open){events=new AbortController();window.addEventListener('resize',()=>panel.hidePopover(),{signal:events.signal});}
+    });
+    for(const item of actions)panel.append(button(item.label,()=>{panel.hidePopover();return item.run();},false,item.icon??''));
+    wrap.append(trigger,panel);return wrap;
+}
 export function modal(title, subtitle = '') {
     const previous = document.activeElement;
     const dialog = el('dialog', 'ap2-dialog');
@@ -216,22 +238,10 @@ export function studio(api,host=null) {
             page.append(button('모두 해제',()=>{api.saveSettings({...api.settings(),references:[]});return open('references',true);}));
         }
         if(id==='gallery') {
-            const actions=el('div','ap2-actions');actions.append(button('새로고침',()=>open('gallery',true),false,'fa-rotate-right'),button('채팅 내보내기',()=>api.exportChat(),false,'fa-file-export'));page.append(actions);
-            page.append(el('p','ap2-muted','최근 100개 작업. 완성된 원본을 확인하고 채팅에 다시 삽입합니다.'));
-            const list=el('div','ap2-gallery');page.append(list);
-            let jobs;try{jobs=await api.jobs();}catch{list.append(el('p','ap2-empty','서버 연결 후 생성 기록을 확인할 수 있습니다.'));return;}
-            if(!jobs.length)list.append(el('p','ap2-empty','아직 생성한 그림이 없습니다.'));
-            for(const job of jobs){const card=el('article','ap2-card');
-                card.append(el('strong','',job.scene?.title??'작업'),el('small','ap2-muted',`${new Date(job.created).toLocaleString()} · ${job.status}`));
-                if(job.status==='done'&&api.isImage(job.url)){
-                    const img=el('img');img.src=job.url;img.loading='lazy';img.alt=job.scene?.title??'삽화';card.append(img);
-                    card.append(button('크게 보기',()=>viewer(job)),button('삽입',()=>api.recover(job)),button('AI 검수',()=>api.review(job)),button('설정 보기',()=>inspect(job)));
-                }else card.append(el('p','ap2-muted',job.error??'서버가 결과를 확정하지 못했습니다. 이 작업은 자동 재전송하지 않습니다.'));
-                list.append(card);
-            }
+            await mountGallery(page,api,()=>open('gallery',true),()=>cached.get(id)===page&&page.isConnected);
         }
         if(id==='queue'){
-            const actions=el('div','ap2-actions');actions.append(button('정지 / 재개',()=>{api.toggleQueue();return open('queue');}),button('대기 취소',()=>{api.cancelQueue();return open('queue');}),button('새로고침',()=>open('queue')));page.append(actions);
+            const actions=el('div','ap2-actions');actions.append(button(api.queuePaused()?'재개':'일시정지',()=>{api.toggleQueue();return open('queue');}),button('대기 취소',()=>{api.cancelQueue();return open('queue');}),actionMenu([{label:'새로고침',icon:'fa-rotate-right',run:()=>open('queue')},{label:'지시 기록',icon:'fa-file-lines',run:()=>api.showPlans()}]));page.append(actions);
             page.append(el('p','ap2-muted',`이번 접속 이미지 요청 ${api.usage()}회`));
             page.append(button('계정 사용량',async()=>{const account=await api.account(),{body}=modal('계정 사용량');body.append(el('p','',`구독 ${account.active?'활성':'비활성'} · 등급 ${account.tier??'확인 불가'}`));body.append(el('p','',`잔여 Anlas ${account.trainingStepsLeft?Number(account.trainingStepsLeft.fixedTrainingStepsLeft??0)+Number(account.trainingStepsLeft.purchasedTrainingSteps??0):'확인 불가'}`));}));
             if(!api.queue().length)page.append(el('p','ap2-empty','진행 중인 작업이 없습니다.'));
@@ -245,13 +255,68 @@ export function studio(api,host=null) {
     void check();void open('generation');
 
 }
+async function mountGallery(page,api,refresh,isCurrent) {
+    const bar=el('div','ap2-gallery-toolbar'),search=el('input'),filter=el('select');
+    search.type='search';search.placeholder='제목·프롬프트 검색';search.setAttribute('aria-label','갤러리 검색');
+    filter.setAttribute('aria-label','갤러리 범위');
+    for(const [value,label]of [['done','전체 삽화'],['chat','이 채팅'],['failed','미완료']]){const option=el('option','',label);option.value=value;filter.append(option);}
+    bar.append(search,filter,actionMenu([{label:'새로고침',icon:'fa-rotate-right',run:refresh},{label:'채팅 내보내기',icon:'fa-file-export',run:()=>api.exportChat()}]));
+    const count=el('p','ap2-muted'),list=el('div','ap2-gallery'),pager=el('div','ap2-gallery-pager');count.setAttribute('role','status');
+    page.append(bar,count,list,pager);count.textContent='그림을 불러오는 중…';
+    const scope=api.contextKey(),chatJobs=api.chatImages(),chatIds=new Set(chatJobs.map(j=>j.id));let recent=[],failure='';
+    try{recent=await api.jobs();}catch(e){failure=e.message;}
+    if(!isCurrent())return;
+    if(scope!==api.contextKey()){count.textContent='채팅이 바뀌었습니다. 새로고침을 눌러 주세요.';return;}
+    // Retain older images saved with this chat, even beyond the server's recent
+    // 100-record window. Deduplicate regenerated images by their stable job ID.
+    const jobs=[...new Map([...chatJobs,...recent].map(job=>[job.id,job])).values()].sort((a,b)=>new Date(b.created)-new Date(a.created));
+    let pageIndex=0;const size=24;
+    const previous=iconButton('이전 페이지','fa-chevron-left',()=>{pageIndex--;render();}),next=iconButton('다음 페이지','fa-chevron-right',()=>{pageIndex++;render();}),pageNumber=el('span','ap2-muted');pager.append(previous,pageNumber,next);
+    function render(){
+        const query=search.value.trim().toLocaleLowerCase();
+        const matches=jobs.filter(job=>{
+            const ready=job.status==='done'&&api.isImage(job.url);
+            if(filter.value==='failed'?ready:!ready)return false;
+            if(filter.value==='chat'&&!chatIds.has(job.id))return false;
+            return !query||[job.scene?.title,job.scene?.prompt,...(job.scene?.characters??[]).map(c=>c.name)].join(' ').toLocaleLowerCase().includes(query);
+        });
+        const pages=Math.max(1,Math.ceil(matches.length/size));pageIndex=Math.max(0,Math.min(pageIndex,pages-1));list.replaceChildren();
+        count.textContent=`${matches.length}개 · ${filter.value==='chat'?'현재 채팅':`최근 서버 기록${recent.length>=100?' 100개':''} + 현재 채팅`}${failure?' · 서버 기록을 불러오지 못했습니다':''}`;count.title=failure;
+        if(!matches.length)list.append(el('p','ap2-empty',query?'검색 결과가 없습니다.':'표시할 그림이 없습니다.'));
+        for(const job of matches.slice(pageIndex*size,(pageIndex+1)*size)){
+            const title=job.scene?.title||'삽화',ready=job.status==='done'&&api.isImage(job.url);
+            const card=button('',()=>{
+                if(!ready){const {body}=modal(title);body.append(el('p','',job.error||'결과가 아직 확정되지 않았습니다.'),button('생성 기록',()=>inspect(job)));return;}
+                const ensureScope=()=>{if(scope!==api.contextKey())throw new Error('채팅이 바뀌었습니다. 갤러리를 새로고침해 주세요.');};
+                viewer(job,{actions:[
+                    {label:'삽입',icon:'fa-plus',close:true,run:()=>{ensureScope();return api.recover(job);}},
+                    {label:'편집',icon:'fa-sliders',close:true,run:()=>{ensureScope();return api.importScene(job.scene,job.config);}},
+                ],more:[{label:'AI 검수',run:()=>api.review(job)},{label:'생성 기록',run:()=>inspect(job)}]});
+            });
+            card.className='ap2-gallery-item';card.replaceChildren();card.title=title;card.setAttribute('aria-label',`${title} · ${ready?'이미지 보기':'작업 확인'}`);
+            if(ready){const img=el('img');img.src=job.url;img.loading='lazy';img.decoding='async';img.alt='';card.append(img);}
+            else card.append(el('span','ap2-gallery-failed',job.status==='failed'?'실패':job.status==='running'?'생성 중':'확인 필요'));
+            card.append(el('span','ap2-gallery-title',title));list.append(card);
+        }
+        previous.disabled=pageIndex===0;next.disabled=pageIndex>=pages-1;pageNumber.textContent=`${pageIndex+1} / ${pages}`;pager.hidden=pages<2;
+    }
+    for(const control of [search,filter])control.addEventListener('input',()=>{pageIndex=0;render();});render();
+}
 export function inspect(job) {
     const {body}=modal('생성 기록',`Seed ${job.seed} · ${MODELS[job.config?.model]?.label??job.config?.model??''}`);
     const pre=el('pre','ap2-code',JSON.stringify({scene:job.scene,config:job.config,seed:job.seed,review:job.review},null,2));body.append(pre,button('다운로드',()=>downloadJson(job,'scenebook-image-record.json')));
 }
-export function viewer(job) {
-    const {body}=modal(job.scene?.title??'삽화'); const img=el('img','ap2-full');img.src=job.url;img.alt=job.scene?.title??'삽화';
-    const a=el('a','ap2-button','원본 PNG 다운로드');a.href=job.url;a.download=`${job.id}.png`;body.append(img,a);
+export function viewer(job,{actions=[],more=[]}={}) {
+    if(!safeImagePath(job.url))throw new Error('이미지 경로를 확인할 수 없습니다.');
+    const {dialog,body}=modal(job.scene?.title??'삽화');dialog.classList.add('ap2-viewer');
+    const img=el('img','ap2-full');img.src=job.url;img.alt=job.scene?.title??'삽화';body.append(img);
+    const footer=el('footer','ap2-footer ap2-viewer-footer');
+    const run=item=>{if(item.close)dialog.close();return item.run();};
+    for(const item of actions)footer.append(button(item.label,()=>run(item),false,item.icon??''));
+    const download=el('a','ap2-button ap2-icon-button');download.href=job.url;download.download=`${job.id}.png`;download.title='원본 PNG 저장';download.setAttribute('aria-label','원본 PNG 저장');
+    const glyph=el('i','fa-solid fa-download');glyph.setAttribute('aria-hidden','true');download.append(glyph);footer.append(download);
+    if(more.length)footer.append(actionMenu(more.map(item=>({...item,run:()=>run(item)}))));
+    dialog.append(footer);return dialog;
 }
 export function compareVersions(versions,currentIndex){
     const {body}=modal('결과 비교');
@@ -267,7 +332,7 @@ export function compareVersions(versions,currentIndex){
 export function mountSettings(api,container){
     const drawer=el('div','inline-drawer');drawer.id='ap2-settings';
     const header=el('div','inline-drawer-toggle inline-drawer-header');header.tabIndex=0;header.setAttribute('role','button');header.setAttribute('aria-expanded','false');header.setAttribute('aria-controls','ap2-settings-content');
-    const label=el('b','ap2-drawer-title','씬북'),version=el('small','ap2-version','0.4.3'),status=el('small','ap2-muted','');status.id='ap2-status';label.append(version);
+    const label=el('b','ap2-drawer-title','씬북'),version=el('small','ap2-version','0.4.4'),status=el('small','ap2-muted','');status.id='ap2-status';label.append(version);
     const icon=el('div','inline-drawer-icon fa-solid fa-circle-chevron-down down');icon.setAttribute('aria-hidden','true');header.append(label,status,icon);
     const content=el('div','inline-drawer-content ap2-settings');content.id='ap2-settings-content';content.style.display='none';
     drawer.append(header,content);container.append(drawer);
