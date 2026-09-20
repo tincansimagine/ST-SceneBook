@@ -4,6 +4,8 @@ import { positionEditor } from './position.mjs';
 import { HELP, showGuide } from './guide.mjs';
 import { imageImport } from './import-ui.mjs';
 import { promptEditor } from './prompt-ui.mjs';
+import { notice,placeNotices } from './notifications.mjs';
+export { notice } from './notifications.mjs';
 export { composer } from './editor.mjs';
 
 export function el(tag, className = '', value = '') {
@@ -19,12 +21,6 @@ export function button(label, action, primary = false, icon = '') {
         try { const result=action();if(result?.then){b.disabled=true;try{await result;}finally{b.disabled=false;}} } catch (e) { notice(e.message, true); }
     }); return b;
 }
-export function notice(message, error = false) {
-    const box = el('div', `ap2-notice${error ? ' ap2-error' : ''}`, message);
-    box.setAttribute('role', error ? 'alert' : 'status');
-    (document.querySelector('dialog.ap2-dialog[open]') ?? document.body).append(box);
-    setTimeout(() => box.remove(), error ? 12000 : 6000);
-}
 export function modal(title, subtitle = '') {
     const previous = document.activeElement;
     const dialog = el('dialog', 'ap2-dialog');
@@ -37,7 +33,7 @@ export function modal(title, subtitle = '') {
     dialog.addEventListener('close', () => { dialog.remove(); previous?.focus(); });
     for(const event of ['mousedown','pointerdown','click'])dialog.addEventListener(event,e=>e.stopPropagation());
     dialog.addEventListener('click', e => { if (e.target === dialog) { const r = dialog.getBoundingClientRect(); if (e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom) dialog.close(); } });
-    dialog.showModal(); return { dialog, body };
+    dialog.showModal();placeNotices(); return { dialog, body };
 }
 export function field(label, value, options = {}) {
     const wrap = el('label', 'ap2-field'); wrap.append(el('span', '', label));
@@ -264,7 +260,7 @@ export function compareVersions(versions,currentIndex){
 export function mountSettings(api,container){
     const drawer=el('div','inline-drawer');drawer.id='ap2-settings';
     const header=el('div','inline-drawer-toggle inline-drawer-header');header.tabIndex=0;header.setAttribute('role','button');header.setAttribute('aria-expanded','false');header.setAttribute('aria-controls','ap2-settings-content');
-    const label=el('b','ap2-drawer-title','씬북'),version=el('small','ap2-version','0.4.1'),status=el('small','ap2-muted','');status.id='ap2-status';label.append(version);
+    const label=el('b','ap2-drawer-title','씬북'),version=el('small','ap2-version','0.4.2'),status=el('small','ap2-muted','');status.id='ap2-status';label.append(version);
     const icon=el('div','inline-drawer-icon fa-solid fa-circle-chevron-down down');icon.setAttribute('aria-hidden','true');header.append(label,status,icon);
     const content=el('div','inline-drawer-content ap2-settings');content.id='ap2-settings-content';content.style.display='none';
     drawer.append(header,content);container.append(drawer);

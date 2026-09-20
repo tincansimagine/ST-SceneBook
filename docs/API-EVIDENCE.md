@@ -48,7 +48,7 @@ V5의 모델명만 바꾸고 구형 본문으로 전송하는 방식은 사용�
 
 - 로컬 SillyTavern 1.19.0 staging의 `public/script.js`를 확인했다. 스트리밍 `finalizeIntermediaryMessage`는 `markUIGenStopped`를 통해 `GENERATION_ENDED`를 발생시킨 다음 `MESSAGE_RECEIVED`를 보낸다. 일반 응답은 수신이 먼저 올 수 있다. 두 이벤트를 모두 기록한 뒤 완료된 메시지를 한 번만 처리한다.
 - `GENERATION_STARTED`에서 `setExtensionPrompt(key, value, IN_CHAT, 0, false, SYSTEM)`로 선택적 지시문을 넣는다. 종료·중지·채팅 변경 시 제거하고 Quiet·impersonate·dry-run에는 넣지 않는다. AutoPic의 흐름을 확인하되 전역 fetch나 다른 확장의 프롬프트를 수정하지 않는다.
-- 명시적인 분석 프로필은 `ConnectionManagerRequestService.sendRequest`를 사용한다. 선택하지 않으면 `getContext().generateRaw({prompt, responseLength, trimNames:false})`로 현재 채팅 연결을 사용한다. 이 호출에 대상 이전의 제한된 문맥과 대상 본문만 전달하며 이후 답변은 넣지 않는다.
+- 명시적인 분석 프로필은 기본적으로 `ConnectionManagerRequestService.sendRequest`를 사용한다. 0.4.2의 Vertex 인증 경로는 아래 항목을 참고한다. 선택하지 않으면 `getContext().generateRaw({prompt, responseLength, trimNames:false})`로 현재 채팅 연결을 사용한다. 이 호출에 대상 이전의 제한된 문맥과 대상 본문만 전달하며 이후 답변은 넣지 않는다.
 - 독립된 `<!--scenebook ... -->` JSON 블록을 해석하고 원문 인용이 한 문단에만 일치하는지 검사한다. 선택된 스와이프만 정리하며 다른 스와이프를 변경하지 않는다. 정보가 없거나 잘못되면 답변 분석으로 이어진다. 명시적인 빈 장면 배열은 추가 분석·이미지 요청을 만들지 않는다.
 - 이번 수정은 유료 API 요청 없이 Node 회귀 테스트와 가상 이벤트/이미지 응답으로 검증한다. 실제 계정의 생성 권한·이미지 품질을 검증했다는 의미는 아니다.
 
@@ -58,3 +58,12 @@ V5의 모델명만 바꾸고 구형 본문으로 전송하는 방식은 사용�
 - 생성·복구·갤러리·검수·참조 저장에서 `userImages`를 사용한다. 사용자 루트의 기존 작업 기록 경로와 공개 이미지 URL은 바뀌지 않는다.
 - `tests/st-contract.test.mjs`는 설치된 ST의 실제 `USER_DIRECTORY_TEMPLATE`과 Express를 불러와 임시 사용자 두 명으로 HTTP 라우트를 검사한다. health → generate → jobs → PNG 조회 → review, 참조 업로드·목록·이미지 조회, 사용자 간 격리를 검증한다. 경로 객체를 잘못 만들었던 기존 테스트도 실제 속성 이름으로 수정했다.
 - 이미지 공급자 응답과 키만 테스트 값으로 대체한다. 사용자 키·채팅·기존 이미지 파일은 읽거나 변경하지 않는다. `SILLYTAVERN_ROOT` 환경 변수로 다른 위치의 ST를 지정할 수 있다. 호스트가 없는 환경은 해당 계약 테스트를 건너뛰었다고 표시한다.
+
+## Vertex 프로필·알림 수정 (0.4.2)
+
+- 로컬 ST 1.19.0 staging의 `public/scripts/extensions/shared.js`, `custom-request.js`, `src/endpoints/google.js`, `secrets.js`, `prompt-converters.js`를 대조했다. 기존 씬북의 `includePreset:false`는 프리셋에 저장된 `vertexai_auth_mode`를 누락한다. ST의 Vertex 인증 기본값은 Express이며, 확인한 인증 코드의 `readSecret` 호출은 요청의 `secret_id`를 사용하지 않는다.
+- Vertex 전용 서버 라우트는 선택된 키 ID를 현재 사용자의 Vertex API 키/서비스 계정 저장소에서만 조회한다. 서비스 계정의 프로젝트와 서명에는 같은 키를 사용한다. 키가 없을 때 다른 활성 키로 재시도하지 않는다. ST의 프롬프트 후처리·Google 메시지 변환·추론 예산 함수를 실행하되 원본 메시지는 복사한다.
+- [Google 공식 Express REST 안내](https://docs.cloud.google.com/gemini-enterprise-agent-platform/reference/express-mode/api-reference)에 따라 프로젝트 없는 Express 요청은 전역 `aiplatform.googleapis.com`을 사용한다. 프로젝트가 지정된 요청은 ST 설정의 리전·프로젝트를 유지한다. 목적지는 고정 Google HTTPS 호스트이며 API 키는 헤더, Full 토큰은 Authorization 헤더에만 담는다. 서비스 계정 토큰 교환은 `oauth2.googleapis.com/token`에 한정한다.
+- 다른 공급자와 명시적 프록시는 ST의 기존 연결 경로를 유지한다. 현재 채팅의 활성 프로필·키를 변경하지 않는다. 새 라우트가 없는 서버는 업데이트·재시작을 안내한다.
+- ST에 포함된 Toastr로 진행·완료·오류를 알린다. 브라우저 모달이 열려 있으면 전역 popover를 사용하여 알림이 가려지거나 닫힌 편집 창과 함께 없어지지 않게 한다. 메시지는 HTML로 삽입하지 않는다.
+- 단위 테스트는 선택한 키·인증 방식·리전·프리셋·이미지 입력 보존, 사용자 격리, 누락 키·오류·잘린 출력과 무재시도를 검증한다. HTTP 계약 테스트는 실제 ST 메시지 변환 코드를 실행하고 임시 사용자 경로와 선택 키를 사용한다. 공급자 응답과 키는 테스트 값으로 대체하며 실계정 인증·유료 생성은 실행하지 않는다.

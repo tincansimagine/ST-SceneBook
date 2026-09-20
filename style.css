@@ -1,5 +1,5 @@
 /* SceneBook: isolate component sizing from SillyTavern's min-content buttons. */
-#ap2-settings, .ap2-dialog, .ap2-figure, .ap2-tools, .ap2-notice {
+#ap2-settings, .ap2-dialog, .ap2-figure, .ap2-tools, .ap2-notice, #ap2-notices {
     --ap2-bg: var(--SmartThemeBlurTintColor, #20242c);
     --ap2-fg: var(--SmartThemeBodyColor, #e7e7e7);
     --ap2-accent: var(--SmartThemeQuoteColor, #91b6a0);
@@ -138,6 +138,15 @@ details.ap2-group > .ap2-group-content { padding: 0 10px 4px; }
 .ap2-placement output { display: block; text-align: center; }
 .ap2-notice { position: fixed; right: 16px; bottom: 16px; z-index: 100000; max-width: min(440px,90vw); padding: 12px 16px; background: var(--ap2-bg); border: 1px solid var(--ap2-accent); border-radius: 6px; box-shadow: 0 6px 25px #0005; white-space: pre-wrap; font-size: .9em; }
 .ap2-notice.ap2-error { border-color: #ba7979; }
+#ap2-notices { position: fixed; inset: auto 12px max(12px,env(safe-area-inset-bottom)) auto; margin: 0; padding: 0; border: 0; width: min(360px,calc(100vw - 24px)); max-height: 65dvh; overflow: auto; background: transparent; z-index: 100000; }
+#ap2-notices:popover-open { display: grid; gap: 8px; }
+#ap2-notices:not(:popover-open):has(.ap2-toast) { display: grid; gap: 8px; }
+.ap2-toast { position: relative; padding: 12px 40px 12px 14px; border: 1px solid var(--ap2-border); border-left: 4px solid var(--ap2-accent); border-radius: 6px; background: var(--ap2-bg); color: var(--ap2-fg); box-shadow: 0 4px 16px #0004; text-align: start; }
+.ap2-toast-error { border-left-color: #cf7373; }
+.ap2-toast-success { border-left-color: #68b68a; }
+.ap2-toast strong { display: block; font-size: .85em; margin-bottom: 5px; }
+.ap2-toast span { display: block; font-size: .88em; line-height: 1.5; overflow-wrap: anywhere; white-space: pre-wrap; }
+.ap2-toast button { position: absolute; top: 3px; right: 3px; width: 34px; height: 34px; border: 0; background: transparent; color: inherit; font-size: 22px; cursor: pointer; }
 @container(max-width:380px) { .ap2-tabs .ap2-tab > i { display: none; } .ap2-field { grid-template-columns: minmax(0,1fr) minmax(100px,55%); column-gap: 8px; } }
 @media(max-width:600px) { .ap2-dialog { width: 96vw; max-width: 96vw; max-height: 95dvh; } .ap2-body { padding: 10px; } .ap2-header { padding: 10px 12px; } .ap2-compare { grid-template-columns: 1fr; } }
 @media(prefers-reduced-motion:reduce) { .ap2-button { transition: none; } }
