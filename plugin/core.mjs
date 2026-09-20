@@ -10,8 +10,8 @@ export const DEFAULTS = Object.freeze({
     model: 'nai-diffusion-5-full', width: 832, height: 1216, steps: 23, scale: 7,
     seed: -1, sampler: 'k_euler_ancestral', scheduler: 'karras', cfgRescale: 0,
     style: '', negative: 'lowres, bad anatomy, watermark', quality: true,
-    useCoords: true, useOrder: true, analysisPrompt: '',
-    automatic: 'off', maxScenes: 2, every: 2, sessionLimit: 12, contextMessages: 8,
+    useCoords: true, useOrder: true, analysisPrompt: '', injectionPrompt: '', promptInjection: false, workflowVersion: 1,
+    automatic: 'generate', maxScenes: 2, every: 1, sessionLimit: 12, contextMessages: 8,
     profileId: '', library: [], presets: [], displayWidth: 640, placement: 'inline',
     compact: false, budgetGuard: true, transparent: false, world: '', direction: '', playerMode: 'auto', references: [], analysisMode:'quick',
 });

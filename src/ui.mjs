@@ -90,9 +90,16 @@ export function studio(api,host=null) {
     const help=button('설치 안내',()=>installationHelp(),false,'fa-circle-info');help.hidden=true;
     const check=async()=>{connectionText.textContent='연결 확인 중';try{const h=await api.health();connectionText.textContent=h.hasKey?'NovelAI 연결 준비됨':'NovelAI 키 미설정';connection.dataset.state=h.hasKey?'ready':'warning';help.hidden=h.hasKey;}catch{connectionText.textContent='서버 플러그인 미연결';connection.dataset.state='warning';help.hidden=false;}};
     connection.append(connectionText,help,button('확인',check,false,'fa-rotate-right'),button('사용법',showGuide,false,'fa-circle-question'));
-    const quick=el('div','ap2-quick');quick.append(button('분석',async()=>{dialog.close();await api.compose();},true,'fa-wand-magic-sparkles'),button('직접 작성',async()=>{dialog.close();await api.compose(undefined,true);},false,'fa-pen'),button('이미지 읽기',()=>imageImport(api,()=>open('generation',true)),false,'fa-file-image'));
+    const quick=el('div','ap2-quick');quick.append(button('장면 편집',async()=>{dialog.close();await api.compose();},false,'fa-pen'),button('이미지 읽기',()=>imageImport(api,()=>open('generation',true)),false,'fa-file-image'));
+    const workflow=el('section','ap2-workflow'),mode=field('자동 생성',api.settings().automatic,{choices:[['generate','켜짐'],['review','초안만'],['off','꺼짐']]}),injection=field('프롬프트 주입',api.settings().promptInjection,{type:'checkbox'}),flowHelp=el('p','ap2-muted'),flowStatus=el('p','ap2-muted ap2-workflow-status');flowStatus.setAttribute('role','status');
+    workflow.append(mode.wrap,injection.wrap,flowHelp,flowStatus);
+    const refreshWorkflow=()=>{const c=api.settings();mode.input.value=c.automatic;injection.input.checked=c.promptInjection;flowHelp.textContent=c.automatic==='off'?'자동 처리가 꺼져 있습니다.':c.promptInjection?'답변에 장면 지시를 주입합니다. 장면 정보가 없으면 답변을 따로 분석합니다.':'답변 완료 → 장면 분석 → '+(c.automatic==='review'?'초안 저장':'이미지 생성·삽입');flowStatus.textContent=api.status?.()||'다음 답변부터 적용 · 변경 즉시 저장';};
+    mode.input.addEventListener('change',()=>{api.saveSettings({...api.settings(),automatic:mode.read()});refreshWorkflow();});
+    injection.input.addEventListener('change',()=>{api.saveSettings({...api.settings(),promptInjection:injection.read()});refreshWorkflow();});
+    document.addEventListener('scenebook-workflow-status',refreshWorkflow);document.addEventListener('scenebook-settings-changed',refreshWorkflow);
+    if(!host)dialog.addEventListener('close',()=>{document.removeEventListener('scenebook-workflow-status',refreshWorkflow);document.removeEventListener('scenebook-settings-changed',refreshWorkflow);},{once:true});refreshWorkflow();
     const nav = el('nav', 'ap2-tabs'), pages = el('div','ap2-pages');nav.setAttribute('aria-label','씬북 설정');nav.setAttribute('role','tablist');
-    body.append(connection,quick,nav,pages);
+    body.append(connection,workflow,quick,nav,pages);
     const tabs = [ ['generation', '생성','fa-sliders'], ['characters', '인물','fa-user'], ['references','참조','fa-images'], ['gallery', '갤러리','fa-film'], ['queue', '작업','fa-list-check'] ];
     const cached=new Map(),instanceId=`ap2-${crypto.randomUUID()}`;let activeId='generation';
     const open = async (id,refresh=false) => {
@@ -115,7 +122,7 @@ export function studio(api,host=null) {
             addField(sampling,fields,'steps','Steps',c.steps,{type:'number',min:1,max:50,step:1});
             addField(sampling,fields,'scale','Guidance',c.scale,{type:'number',min:0,max:10,step:0.1});
             const analysis=settingGroup(page,'장면 분석');
-            addField(analysis,fields,'profileId','연결 프로필',c.profileId,{choices:[['','선택 안 함'],...api.profiles().map(p=>[p.id,p.name])]});
+            addField(analysis,fields,'profileId','연결 프로필',c.profileId,{choices:[['','현재 채팅 연결'],...api.profiles().map(p=>[p.id,p.name])],help:'따로 고르지 않아도 현재 대화에 사용하는 AI로 분석합니다.'});
             addField(analysis,fields,'analysisMode','분석 방식',c.analysisMode,{choices:[['quick','빠르게'],['precise','정밀하게']],help:'정밀 분석은 복장·외형 시점 확인에 LLM을 한 번 더 호출합니다.'});
             const counts=el('div','ap2-grid');analysis.append(counts);
             addField(counts,fields,'maxScenes','최대 장면',c.maxScenes,{type:'number',min:1,max:6,step:1});
@@ -123,9 +130,8 @@ export function studio(api,host=null) {
             const prompts=settingGroup(page,'프롬프트',true);
             addField(prompts,fields,'style','그림체',c.style,{multiline:true});
             addField(prompts,fields,'negative','제외 요소',c.negative,{multiline:true,rows:2});
-            prompts.append(button('편집 · 공유',()=>promptEditor({...api.settings(),...readFields(fields)},value=>{for(const key of ['style','negative'])fields[key].input.value=value[key];fields.quality.input.checked=value.quality;fields.analysisPrompt={read:()=>value.analysisPrompt};page.dispatchEvent(new Event('input'));}),false,'fa-pen'));
-            const automatic=settingGroup(page,'자동 처리',true);
-            addField(automatic,fields,'automatic','새 답변',c.automatic,{choices:[['off','사용 안 함'],['review','분석 후 검토'],['generate','분석 후 생성']]});
+            prompts.append(button('편집 · 공유',()=>promptEditor({...api.settings(),...readFields(fields)},value=>{for(const key of ['style','negative'])fields[key].input.value=value[key];fields.quality.input.checked=value.quality;for(const key of ['analysisPrompt','injectionPrompt'])fields[key]={read:()=>value[key]};page.dispatchEvent(new Event('input'));}),false,'fa-pen'));
+            const automatic=settingGroup(page,'자동 생성 한도',true);
             const limits=el('div','ap2-grid');automatic.append(limits);
             addField(limits,fields,'every','답변 간격',c.every,{type:'number',min:1,max:20,step:1});
             addField(limits,fields,'sessionLimit','접속당 요청 한도',c.sessionLimit,{type:'number',min:1,max:100,step:1});
@@ -258,7 +264,7 @@ export function compareVersions(versions,currentIndex){
 export function mountSettings(api,container){
     const drawer=el('div','inline-drawer');drawer.id='ap2-settings';
     const header=el('div','inline-drawer-toggle inline-drawer-header');header.tabIndex=0;header.setAttribute('role','button');header.setAttribute('aria-expanded','false');header.setAttribute('aria-controls','ap2-settings-content');
-    const label=el('b','ap2-drawer-title','씬북'),version=el('small','ap2-version','0.3.0'),status=el('small','ap2-muted','');status.id='ap2-status';label.append(version);
+    const label=el('b','ap2-drawer-title','씬북'),version=el('small','ap2-version','0.4.0'),status=el('small','ap2-muted','');status.id='ap2-status';label.append(version);
     const icon=el('div','inline-drawer-icon fa-solid fa-circle-chevron-down down');icon.setAttribute('aria-hidden','true');header.append(label,status,icon);
     const content=el('div','inline-drawer-content ap2-settings');content.id='ap2-settings-content';content.style.display='none';
     drawer.append(header,content);container.append(drawer);

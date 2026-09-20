@@ -3,6 +3,7 @@ import { positionEditor } from './position.mjs';
 import { sceneBundle, readSceneBundle } from './editor-data.mjs';
 import { showGuide } from './guide.mjs';
 import { generationEditor } from './generation-ui.mjs';
+import { paragraphPosition } from './paragraph-ui.mjs';
 import { el, button, field, addField, readFields, modal, notice, confirmAction, downloadJson } from './ui.mjs';
 
 export function composer({context,scenes,config,onAnalyze,onGenerate,onDraft,previewUrl}){
@@ -20,8 +21,8 @@ export function composer({context,scenes,config,onAnalyze,onGenerate,onDraft,pre
     tools.append(sceneBack,sceneNext,addScene,deleteScene);
     sceneSelect.input.addEventListener('change',()=>{selected=Number(sceneSelect.read());person=0;render();});
     title.input.addEventListener('input',()=>{if(scene()){scene().title=title.read();sceneSelect.input.options[selected].textContent=`${selected+1}. ${title.read()||'새 장면'}`;dirty=true;}});
-    const nav=el('div','ap2-actions ap2-editor-tabs'),content=el('div','ap2-editor-content'),status=el('p','ap2-muted');status.setAttribute('role','status');
-    for(const [key,label]of [['scene','장면'],['cast','인물 · 배치'],['final','최종 프롬프트']]){const b=button(label,()=>{tab=key;renderContent();});b.dataset.tab=key;nav.append(b);}
+    const nav=el('div','ap2-editor-tabs'),content=el('div','ap2-editor-content'),status=el('p','ap2-muted');status.setAttribute('role','status');nav.setAttribute('aria-label','장면 편집 항목');
+    for(const [key,label]of [['scene','장면'],['cast','인물·배치'],['final','프롬프트']]){const b=button(label,()=>{tab=key;renderContent();});b.classList.remove('menu_button','menu_button_icon');b.dataset.tab=key;nav.append(b);}
     body.append(nav,status,content);
     const footer=el('footer','ap2-footer ap2-editor-footer'),secondary=el('div','ap2-actions'),primary=el('div','ap2-actions');footer.append(secondary,primary);dialog.append(footer);
     const undoButton=button('되돌리기',()=>{const last=undo.pop();if(!last)return;drafts=last.drafts;Object.assign(config,last.config);selected=last.selected;person=last.person;dirty=true;render();},false,'fa-rotate-left');
@@ -48,9 +49,7 @@ export function composer({context,scenes,config,onAnalyze,onGenerate,onDraft,pre
     }
     function bind(parent,key,label,options={}){const f=field(label,scene()[key],options);parent.append(f.wrap);f.input.addEventListener('input',()=>{scene()[key]=f.read();});return f;}
     function renderScene(){
-        const after=bind(content,'after','삽입 문단',{choices:context.blocks.map(b=>[String(b.index),`${b.index}번 문단 뒤`])});
-        const excerpt=el('details','ap2-guide-topic');excerpt.append(el('summary','','원문 보기'),el('blockquote','ap2-excerpt',context.blocks.find(b=>b.index===Number(scene().after))?.content??''));content.append(excerpt);
-        after.input.addEventListener('change',()=>{scene().after=Number(after.read());scene().evidence='';excerpt.lastChild.textContent=context.blocks.find(b=>b.index===scene().after)?.content??'';});
+        content.append(paragraphPosition(context.blocks,Number(scene().after),index=>{if(scene().after!==index){snapshot();scene().after=index;scene().evidence='';undoButton.disabled=false;}}));
         bind(content,'prompt','장면 프롬프트',{multiline:true,rows:5,placeholder:'배경, 조명, 장면의 시각적 상황을 입력하세요.'});
         if(scene().finalPrompt){const exact=field('최종 프롬프트 직접 사용',true,{type:'checkbox',help:'이 장면에는 공통 그림체·구도·품질 태그를 덧붙이지 않습니다.'});exact.input.addEventListener('input',()=>{scene().finalPrompt=exact.read();});content.append(exact.wrap);}
         const row=el('div','ap2-grid');content.append(row);bind(row,'camera','구도',{multiline:true,rows:3});bind(row,'negative','장면 제외 요소',{multiline:true,rows:3});

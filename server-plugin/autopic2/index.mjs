@@ -17,7 +17,7 @@ export async function init(router) {
             res.status(e instanceof ApiError ? e.status : 500).json({ error: e instanceof ApiError ? e.message : '서버 저장소를 확인하세요.', code: e.code ?? 'SERVER_ERROR' });
         }
     };
-    router.get('/health', wrap(async (req, res) => res.json({ version: '0.3.0', models: MODELS, hasKey: !!readSecret(req.user.directories, SECRET_KEYS.NOVEL) })));
+    router.get('/health', wrap(async (req, res) => res.json({ version: '0.4.0', models: MODELS, hasKey: !!readSecret(req.user.directories, SECRET_KEYS.NOVEL) })));
     router.get('/jobs', wrap(async (req, res) => res.json({ jobs: await service.list(req.user.directories) })));
     router.post('/review',wrap(async(req,res)=>res.json(await service.review(req.user.directories,req.body?.id,req.body?.review))));
     router.get('/references',wrap(async(req,res)=>res.json({references:await listReferences(req.user.directories)})));

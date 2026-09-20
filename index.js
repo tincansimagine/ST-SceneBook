@@ -2,6 +2,8 @@ import { ConnectionManagerRequestService } from '../../shared.js';
 import { DEFAULTS, MODELS, validateConfig, normalizeScene, safeImagePath, sourceKey, number, text } from './plugin/core.mjs';
 import { createContext, compileCharacter, planInstruction, validateAnchor, normalized } from './src/context.mjs';
 import { validateTemplate } from './src/prompts.mjs';
+import { AutomaticResponses, migrateWorkflow } from './src/automatic.mjs';
+import { renderInjection, validateInjectionTemplate, extractInjectedPlan, injectedScenes } from './src/injection.mjs';
 import { WorkQueue } from './src/queue.mjs';
 import { downloadChat } from './src/export.mjs';
 import { mergeRevision } from './src/revision.mjs';
@@ -13,16 +15,19 @@ const context = () => SillyTavern.getContext();
 let sessionRequests = 0, receivedCount = 0, renderTimer;
 const queue = new WorkQueue(() => updateBadge());
 const analysisLocks = new Set();
-const automaticCandidates = new Set();
 const rendered = new WeakMap();
+let workflowStatus = '';
+function setWorkflowStatus(value) { workflowStatus = value; updateBadge(); }
+const automatic = new AutomaticResponses({scope, message:index=>context().chat[index], aborted:()=>!!context().streamingProcessor?.abortController?.signal.aborted,
+    run:processAutomatic, error:e=>{setWorkflowStatus(e.message);notice(e.message,true);}});
 
 function settings() { return { ...structuredClone(DEFAULTS), ...context().extensionSettings[KEY] }; }
 function visualSettings(){return{...settings(),...context().chatMetadata?.[KEY]?.visual};}
 function cleanSettings(value) {
     const c = Object.fromEntries(Object.keys(DEFAULTS).map(k => [k, value[k] ?? structuredClone(DEFAULTS[k])]));
-    validateConfig(c);validateTemplate(c.analysisPrompt);
+    validateConfig(c);validateTemplate(c.analysisPrompt);validateInjectionTemplate(c.injectionPrompt);
     for (const [key,min,max] of [['maxScenes',1,6],['every',1,20],['sessionLimit',1,100],['contextMessages',0,30],['displayWidth',240,1200]]) number(c[key],min,max,key,true);
-    for (const key of ['quality','compact','budgetGuard','transparent']) if(typeof c[key]!=='boolean')throw new Error(`${key}: 켜기/끄기 값이 필요합니다.`);
+    for (const key of ['quality','compact','budgetGuard','transparent','promptInjection']) if(typeof c[key]!=='boolean')throw new Error(`${key}: 켜기/끄기 값이 필요합니다.`);
     if(!['off','review','generate'].includes(c.automatic))throw new Error('자동 처리 설정을 확인하세요.');
     if(!['quick','precise'].includes(c.analysisMode))throw new Error('분석 모드를 확인하세요.');
     if(!['pov','visible','auto'].includes(c.playerMode)||!['inline','end'].includes(c.placement))throw new Error('표시 설정을 확인하세요.');
@@ -41,7 +46,7 @@ function cleanSettings(value) {
     c.presets=c.presets.map(p=>({name:text(p.name,100),config:generationConfig(validateConfig({...c,...p.config}))}));
     return c;
 }
-function saveSettings(value) { context().extensionSettings[KEY]=cleanSettings(value);context().saveSettingsDebounced();scheduleRender();document.dispatchEvent(new Event('scenebook-settings-changed')); }
+function saveSettings(value) { context().extensionSettings[KEY]=cleanSettings(value);context().saveSettingsDebounced();if(!settings().promptInjection||settings().automatic==='off')clearInjection();scheduleRender();document.dispatchEvent(new Event('scenebook-settings-changed')); }
 async function request(route, body) {
     const response=await fetch(`/api/plugins/autopic2/${route}`,{method:body?'POST':'GET',headers:context().getRequestHeaders(),...(body?{body:JSON.stringify(body)}:{})});
     let result;try{result=await response.json();}catch{throw new Error('씬북 서버 플러그인이 없거나 응답이 올바르지 않습니다. plugins/autopic2 설치와 enableServerPlugins 설정을 확인하세요.');}
@@ -75,20 +80,24 @@ async function saveMessage(target) {
     if(message.swipe_info?.[message.swipe_id??0])message.swipe_info[message.swipe_id??0].extra=structuredClone(message.extra);
     await context().saveChat();scheduleRender();
 }
+async function analysisRequest(config,prompt,length) {
+    if(config.profileId)return ConnectionManagerRequestService.sendRequest(config.profileId,prompt,length,{extractData:true,includePreset:false,includeInstruct:true,stream:false,signal:AbortSignal.timeout(120000)});
+    const c=context();if(!c.generateRaw)throw new Error('현재 채팅 연결로 분석할 수 없습니다. 생성 설정에서 연결 프로필을 선택하세요.');
+    return {content:await c.generateRaw({prompt,responseLength:length,trimNames:false})};
+}
 async function analyze(target,existing=[],direction='',revisionScope='all') {
     if(!current(target))throw new Error('본문이 변경되었습니다. 해당 답변에서 다시 시작하세요.');
-    if(!target.config.profileId)throw new Error('생성 설정에서 장면 분석 연결 프로필을 선택하세요.');
     const lock=`${target.scope}:${target.id}:${target.key}`;
     if(analysisLocks.has(lock))throw new Error('이 답변을 이미 분석 중입니다.');
     analysisLocks.add(lock);updateBadge();
     try{
         let timeline=null;
         if(target.config.analysisMode==='precise'&&target.snapshot.library.length&&(!existing.length||revisionScope==='all'||revisionScope==='characters')){
-            const extracted=await ConnectionManagerRequestService.sendRequest(target.config.profileId,timelineInstruction(target.snapshot),4000,{extractData:true,includePreset:false,includeInstruct:true,stream:false,signal:AbortSignal.timeout(120000)});
+            const extracted=await analysisRequest(target.config,timelineInstruction(target.snapshot),4000);
             let parsed;try{parsed=JSON.parse(String(extracted?.content??'').trim().replace(/^```(?:json)?\s*/i,'').replace(/\s*```$/,''));}catch{throw new Error('상태 추적 JSON을 해석할 수 없습니다. 빠른 모드로 조용히 바꾸지 않았습니다.');}
             timeline=validateTimeline(parsed,target.snapshot);
         }
-        const response=await ConnectionManagerRequestService.sendRequest(target.config.profileId,planInstruction(target.snapshot,target.config,existing.length?existing:null,direction),Math.min(6000,1800*target.config.maxScenes),{extractData:true,includePreset:false,includeInstruct:true,stream:false,signal:AbortSignal.timeout(120000)});
+        const response=await analysisRequest(target.config,planInstruction(target.snapshot,target.config,existing.length?existing:null,direction),Math.min(6000,1800*target.config.maxScenes));
         let value;try{value=JSON.parse(String(response?.content??'').trim().replace(/^```(?:json)?\s*/i,'').replace(/\s*```$/,''));}catch{throw new Error('분석 응답의 JSON 형식이 잘못됐습니다. 기존 초안은 유지됩니다. 직접 작성하거나 재분석하세요.');}
         if(!Array.isArray(value.scenes)||value.scenes.length>target.config.maxScenes)throw new Error('분석 결과의 장면 수가 설정과 맞지 않습니다.');
         if(existing.length&&value.scenes.length!==existing.length)throw new Error('수정 중 장면 수가 바뀌었습니다. 기존 초안을 유지합니다.');
@@ -152,10 +161,11 @@ async function enqueue(target,scenes,slotId=null,overrideConfig=null) {
         const frozen=generationConfig(c),id=crypto.randomUUID();
         const added=queue.add(key,async()=>{
             if(!current(target))throw new Error('대상 변경으로 대기 중 생성을 취소했습니다.');
+            if(target.automaticCandidate&&(settings().automatic!=='generate'||target.automaticCandidate.generation?.stopped))throw new Error('자동 처리 중단으로 대기 중 생성을 취소했습니다.');
             if(sessionRequests>=settings().sessionLimit)throw new Error('생성 요청 한도에 도달했습니다.');
             sessionRequests++;
-            try{const job=await request('generate',{id,scene,config:frozen});await attach(target,job,slotId);}
-            catch(e){if(['NO_KEY','NAI_401','NAI_402','NAI_403','NAI_429','COOLDOWN'].includes(e.code))queue.paused=true;notice(e.message,true);throw e;}
+            try{const job=await request('generate',{id,scene,config:frozen});await attach(target,job,slotId);setWorkflowStatus('삽화 생성 완료');}
+            catch(e){if(['NO_KEY','NAI_401','NAI_402','NAI_403','NAI_429','COOLDOWN'].includes(e.code))queue.paused=true;setWorkflowStatus(e.message);notice(e.message,true);throw e;}
         },scene.title);
         if(!added)notice('이 위치의 그림은 이미 생성 중입니다.');
     }
@@ -171,6 +181,7 @@ async function compose(index=lastIndex(),manual=false,initial=null,slotId=null,r
     composer({context:target.snapshot,scenes,config:target.config,previewUrl,onAnalyze:(old,direction,scope)=>analyze(target,old,direction,scope),onGenerate:s=>enqueue(target,s,slotId),onDraft:async s=>{if(!current(target))throw new Error('편집 중 채팅이 변경됐습니다. 다시 열어 주세요.');viewState(target).draft=s;viewState(target).draftConfig=generationConfig(target.config);await saveMessage(target);}});
 }
 function updateBadge() {
+    document.dispatchEvent(new Event('scenebook-workflow-status'));
     const b=document.getElementById('ap2-status');if(!b)return;
     const waiting=queue.items.filter(x=>x.state==='waiting').length;
     b.textContent=analysisLocks.size?'분석 중':queue.running?`생성 중${waiting?` +${waiting}`:''}`:queue.paused?'일시정지':'';
@@ -183,11 +194,8 @@ function renderMessage(index) {
     const previous=rendered.get(content);
     if(previous?.signature===signature&&previous.nodes.every(n=>n.isConnected))return;
     block.querySelectorAll('.ap2-tools,.ap2-figure').forEach(x=>x.remove());
-    const toolbar=el('div','ap2-tools');toolbar.append(button('삽화',()=>compose(index)),button('직접 작성',()=>compose(index,true)));
-    content.after(toolbar);
-    const nodes=[toolbar];rendered.set(content,{signature,nodes});
+    const nodes=[];rendered.set(content,{signature,nodes});
     if(!state||state.source!==m.mes)return;
-    if(state.draft?.length)toolbar.append(el('span','ap2-muted',`검토할 장면 ${state.draft.length}개`));
     for(const slot of state.slots??[]){
         if(slot.hidden)continue;
         const job=slot.versions?.[slot.selected];if(!job||!safeImagePath(job.url))continue;
@@ -212,22 +220,54 @@ function renderMessage(index) {
     }
 }
 function scheduleRender() {clearTimeout(renderTimer);renderTimer=setTimeout(()=>{document.querySelectorAll('#chat .mes[mesid]').forEach(n=>renderMessage(Number(n.getAttribute('mesid'))));},80);}
-async function processAutomatic() {
-    const indices=[...automaticCandidates];automaticCandidates.clear();
-    for(const index of indices){
-        try{
-            const c=settings();if(c.automatic==='off')return;
-            const target=capture(index),state=viewState(target);if(state.autoAttempted)continue;
-            receivedCount++;if(receivedCount%c.every)continue;
-            state.autoAttempted=true;await saveMessage(target);
-            const scenes=await analyze(target);
-            if(c.automatic==='generate'&&scenes.length)await enqueue(target,scenes);
-            else if(scenes.length)notice('삽화 장면을 준비했습니다. 해당 답변의 삽화 버튼에서 검토하세요.');
-        }catch(e){notice(e.message,true);}
+function clearInjection(){context().setExtensionPrompt?.('scenebook-illustrations','',1,0,false,0);}
+function injectPrompt(type,options,dryRun){
+    clearInjection();
+    const c=visualSettings();
+    if(dryRun||['quiet','impersonate'].includes(type)||!context().getCurrentChatId()||!c.promptInjection||c.automatic==='off')return;
+    if(!context().setExtensionPrompt){setWorkflowStatus('현재 SillyTavern에서 프롬프트 주입을 지원하지 않습니다.');return;}
+    context().setExtensionPrompt('scenebook-illustrations',renderInjection(c),1,0,false,0);
+}
+async function processAutomatic(candidate) {
+    const ctx=context(),index=ctx.chat.indexOf(candidate.message),c=settings();
+    if(c.automatic==='off'||index<0||candidate.scope!==scope())return;
+    let target=capture(index),state=viewState(target);
+    if(state.automatic?.source===target.snapshot.source)return;
+    receivedCount++;
+    // Keep generated planning out of the visible reply and subsequent chat context,
+    // even on replies skipped by the interval. Store it against this exact swipe.
+    const embedded=extractInjectedPlan(target.snapshot.source);
+    if(embedded.found){
+        const message=target.message;
+        message.mes=embedded.source;
+        if(Array.isArray(message.swipes))message.swipes[message.swipe_id??0]=message.mes;
+        target=capture(index);state=viewState(target);
+        state.injected=embedded;
+        ctx.updateMessageBlock?.(index,message,{rerenderMessage:true});
+        await saveMessage(target);
     }
+    if((receivedCount-1)%c.every){setWorkflowStatus(`답변 간격 ${c.every} · 이번 답변 건너뜀`);return;}
+    if(c.automatic==='generate'){
+        const health=await request('health');if(!health.hasKey)throw new Error('SillyTavern에서 NovelAI 키를 먼저 저장하세요.');
+        if(sessionRequests>=c.sessionLimit)throw new Error('이번 접속의 생성 요청 한도에 도달했습니다.');
+        if(queue.paused)throw new Error('생성 대기열이 일시정지되어 있습니다. 작업 탭에서 확인하세요.');
+    }
+    if(!current(target)||settings().automatic==='off'||candidate.generation?.stopped)return;
+    // Never replay an uncertain paid analysis automatically. Manual editing can retry.
+    state.automatic={source:target.snapshot.source,status:'analyzing'};await saveMessage(target);
+    try{
+        let scenes;
+        if(embedded.found&&embedded.value){try{scenes=injectedScenes(embedded.value,target.snapshot.source,target.config);}catch{setWorkflowStatus('주입 장면의 위치를 확인할 수 없어 답변을 분석합니다.');}}
+        if(!scenes){setWorkflowStatus(embedded.found?'주입 장면을 읽을 수 없어 답변 분석 중':'답변 분석 중');scenes=await analyze(target);}
+        else{state.draft=scenes;state.draftConfig=generationConfig(target.config);await saveMessage(target);}
+        if(!current(target)||settings().automatic==='off'||candidate.generation?.stopped){state.automatic.status='cancelled';return;}
+        if(settings().automatic==='generate'&&scenes.length){target.automaticCandidate=candidate;await enqueue(target,scenes);state.automatic.status='queued';}
+        else {state.automatic.status='ready';setWorkflowStatus(scenes.length?`장면 ${scenes.length}개 준비됨 · 장면 편집에서 확인`:'이번 답변에는 삽화에 적합한 장면이 없습니다.');}
+        await saveMessage(target);
+    }catch(e){state.automatic.status='failed';state.automatic.error=e.message;if(current(target))await saveMessage(target);throw e;}
 }
 const api={settings,saveSettings,visualSettings,hasVisualOverride:()=>!!context().chatMetadata?.[KEY]?.visual,
-    contextKey:scope,
+    contextKey:scope,status:()=>analysisLocks.size?'답변 분석 중':queue.running?'삽화 생성 중':queue.paused?'생성 일시정지':workflowStatus,
     exportChat:()=>downloadChat(context().chat,context().getCurrentChatId()??'삽화 채팅'),
     saveVisual:async(value,where,expectedScope)=>{const c=cleanSettings(value);if(where==='account'){saveSettings(c);return;}if(expectedScope&&expectedScope!==scope())throw new Error('편집 중 채팅이 바뀌었습니다. 인물 탭을 다시 불러온 뒤 저장하세요.');const ctx=context();if(!ctx.getCurrentChatId())throw new Error('채팅을 먼저 열어 주세요.');ctx.chatMetadata[KEY]??={};ctx.chatMetadata[KEY].visual=Object.fromEntries(['world','direction','playerMode','library'].map(k=>[k,c[k]]));await ctx.saveMetadata();},
     resetVisual:async()=>{const c=context();if(c.chatMetadata?.[KEY])delete c.chatMetadata[KEY].visual;await c.saveMetadata();},
@@ -240,12 +280,14 @@ const api={settings,saveSettings,visualSettings,hasVisualOverride:()=>!!context(
     recover:async job=>{const target=capture();const copy=structuredClone(job);copy.scene.after=target.snapshot.blocks.at(-1).index;copy.scene.evidence='';await attach(target,copy);notice('마지막 답변 아래에 삽입했습니다.');},
 };
 function initialize() {
-    const c=context();c.extensionSettings[KEY]??=structuredClone(DEFAULTS);
+    const c=context();c.extensionSettings[KEY]=migrateWorkflow(c.extensionSettings[KEY],DEFAULTS);c.saveSettingsDebounced();
     const container=document.getElementById('extensions_settings2')??document.getElementById('extensions_settings');
     if(container&&!document.getElementById('ap2-settings'))mountSettings(api,container);
-    for(const name of ['CHARACTER_MESSAGE_RENDERED','MESSAGE_UPDATED','MESSAGE_SWIPED','MESSAGE_DELETED','CHAT_CHANGED'])if(c.eventTypes[name])c.eventSource.on(c.eventTypes[name],()=>{if(name==='CHAT_CHANGED'){automaticCandidates.clear();queue.cancelWaiting();}scheduleRender();});
-    c.eventSource.on(c.eventTypes.MESSAGE_RECEIVED,(index,type)=>{if(!['quiet','impersonate','first_message'].includes(type))automaticCandidates.add(Number(index));});
-    c.eventSource.on(c.eventTypes.GENERATION_ENDED,()=>{void processAutomatic();});
+    for(const name of ['CHARACTER_MESSAGE_RENDERED','MESSAGE_UPDATED','MESSAGE_SWIPED','MESSAGE_DELETED','CHAT_CHANGED'])if(c.eventTypes[name])c.eventSource.on(c.eventTypes[name],()=>{if(name==='CHAT_CHANGED'){automatic.reset();receivedCount=0;clearInjection();queue.cancelWaiting();setWorkflowStatus('');}scheduleRender();});
+    c.eventSource.on(c.eventTypes.MESSAGE_RECEIVED,(index,type)=>automatic.receive(index,type));
+    c.eventSource.on(c.eventTypes.GENERATION_ENDED,()=>{clearInjection();automatic.end();});
+    if(c.eventTypes.GENERATION_STARTED)c.eventSource.on(c.eventTypes.GENERATION_STARTED,(type,options,dryRun)=>{automatic.start(type,dryRun);try{injectPrompt(type,options,dryRun);}catch(e){setWorkflowStatus(e.message);}});
+    if(c.eventTypes.GENERATION_STOPPED)c.eventSource.on(c.eventTypes.GENERATION_STOPPED,()=>{automatic.stop();clearInjection();});
     if(c.SlashCommandParser&&c.SlashCommand)c.SlashCommandParser.addCommandObject(c.SlashCommand.fromProps({name:'scenebook',callback:()=>{studio(api);return '';},helpString:'씬북 설정을 엽니다.'}));
     scheduleRender();
 }
