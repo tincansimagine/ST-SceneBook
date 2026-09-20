@@ -226,15 +226,22 @@ export function studio(api,host=null) {
             input.addEventListener('change',async()=>{try{input.disabled=true;const f=input.files?.[0];if(!f)return;await api.uploadReference({label:f.name,image:await prepareReference(f)});notice('레퍼런스를 등록했습니다.');await open('references',true);}catch(e){notice(e.message,true);}finally{input.disabled=false;}});
             let refs;try{refs=await api.references();}catch{page.dataset.failed='true';upload.disabled=true;page.append(el('p','ap2-empty','서버 연결 후 참조 이미지를 관리할 수 있습니다.'));return;}if(cached.get(id)!==page)return;const rows=[];
             if(!refs.length)page.append(el('p','ap2-empty','등록한 참조 이미지가 없습니다.'));
-            for(const ref of refs){const card=el('div','ap2-card'),f={},saved=selected.find(x=>x.id===ref.id);card.append(el('strong','',ref.label));
+            for(const ref of refs){const card=el('div','ap2-card'),f={},saved=selected.find(x=>x.id===ref.id);
+                const heading=el('div','ap2-reference-heading');heading.append(el('strong','',ref.label),iconButton('참조 삭제','fa-trash-can',async()=>{
+                    if(!await confirmAction('참조 삭제',`“${ref.label}”을 삭제할까요? 업로드한 원본을 서버에서 삭제하고 적용 목록과 프리셋에서도 해제합니다. 이미 생성한 삽화는 유지됩니다.`))return;
+                    await api.deleteReference(ref.id);
+                    const index=rows.findIndex(row=>row.id===ref.id);if(index>=0)rows.splice(index,1);card.remove();
+                    if(!rows.length&&!page.querySelector('.ap2-empty'))page.append(el('p','ap2-empty','등록한 참조 이미지가 없습니다.'));
+                    notice('참조 이미지를 삭제했습니다.');
+                }));card.append(heading);
                 if(api.isImage(ref.url)){const img=el('img');img.src=ref.url;img.alt=ref.label;img.style.maxHeight='160px';img.style.maxWidth='100%';img.loading='lazy';card.append(img);}
                 addField(card,f,'enabled','이 레퍼런스 적용',!!saved,{type:'checkbox'});
                 addField(card,f,'kind','용도',saved?.kind??'vibe',{choices:[['vibe','Vibe · 그림체/분위기'],['precise','Precise · 인물/스타일']]});
                 addField(card,f,'mode','Precise 모드',saved?.mode??'character',{choices:[['character','인물'],['style','스타일'],['character&style','인물과 스타일']]});
                 for(const [key,label,value]of [['strength','강도',0.6],['fidelity','Precise 충실도',1],['information','Vibe 정보량',1]])addField(card,f,key,label,saved?.[key]??value,{type:'number',min:0,max:1,step:0.05});
-                rows.push(()=>({id:ref.id,...readFields(f)}));page.append(card);
+                rows.push({id:ref.id,read:()=>({id:ref.id,...readFields(f)})});page.append(card);
             }
-            if(refs.length)saveBar(page,()=>{const references=rows.map(r=>r()).filter(r=>r.enabled).map(({enabled,...r})=>r);api.saveSettings({...api.settings(),references});});
+            if(refs.length)saveBar(page,()=>{const references=rows.map(row=>row.read()).filter(r=>r.enabled).map(({enabled,...r})=>r);api.saveSettings({...api.settings(),references});});
             page.append(button('모두 해제',()=>{api.saveSettings({...api.settings(),references:[]});return open('references',true);}));
         }
         if(id==='gallery') {
@@ -332,7 +339,7 @@ export function compareVersions(versions,currentIndex){
 export function mountSettings(api,container){
     const drawer=el('div','inline-drawer');drawer.id='ap2-settings';
     const header=el('div','inline-drawer-toggle inline-drawer-header');header.tabIndex=0;header.setAttribute('role','button');header.setAttribute('aria-expanded','false');header.setAttribute('aria-controls','ap2-settings-content');
-    const label=el('b','ap2-drawer-title','씬북'),version=el('small','ap2-version','0.4.8'),status=el('small','ap2-muted','');status.id='ap2-status';label.append(version);
+    const label=el('b','ap2-drawer-title','씬북'),version=el('small','ap2-version','0.4.9'),status=el('small','ap2-muted','');status.id='ap2-status';label.append(version);
     const icon=el('div','inline-drawer-icon fa-solid fa-circle-chevron-down down');icon.setAttribute('aria-hidden','true');header.append(label,status,icon);
     const content=el('div','inline-drawer-content ap2-settings');content.id='ap2-settings-content';content.style.display='none';
     drawer.append(header,content);container.append(drawer);

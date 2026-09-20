@@ -58,6 +58,7 @@ function saveSettings(value) { const previous=settings();preserveSettings(contex
 async function request(route, body, signal) {
     const response=await fetch(`/api/plugins/autopic2/${route}`,{method:body?'POST':'GET',headers:context().getRequestHeaders(),signal,...(body?{body:JSON.stringify(body)}:{})});
     if(route==='vertex'&&response.status===404)throw new Error('씬북 서버 플러그인을 0.4.2 이상으로 업데이트하고 SillyTavern을 재시작하세요.');
+    if(route==='references/delete'&&response.status===404)throw new Error('참조 삭제에는 씬북 서버 0.4.4 이상이 필요합니다. 서버 플러그인을 교체하고 SillyTavern을 재시작하세요.');
     let result;try{result=await response.json();}catch{throw new Error('씬북 서버 플러그인이 없거나 응답이 올바르지 않습니다. plugins/autopic2 설치와 enableServerPlugins 설정을 확인하세요.');}
     if(!response.ok){const error=new Error(result.error??`서버 응답 ${response.status}`);error.code=result.code;throw error;}
     return result;
@@ -167,6 +168,10 @@ async function enqueue(target,scenes,slotId=null,overrideConfig=null) {
     checked.forEach(s=>validateAnchor(s,target.snapshot));validateConfig(c);
     if(sessionRequests+queue.items.filter(x=>x.state==='waiting').length+checked.length>settings().sessionLimit)throw new Error('이번 접속의 생성 요청 한도를 초과합니다. 생성 설정에서 한도를 조정하세요.');
     const health=await checkHealth();if(!health.hasKey)throw new Error('SillyTavern에서 NovelAI 키를 먼저 저장하세요.');
+    if(c.references?.length){
+        const available=new Set((await request('references')).references.map(ref=>ref.id));
+        if(c.references.some(ref=>!available.has(ref.id)))throw new Error('삭제된 참조 이미지가 포함되어 있습니다. 톱니바퀴로 장면을 다시 열어 확인한 뒤 생성하세요.');
+    }
     for(const [position,scene] of checked.entries()){
         const key=`${target.scope}:${target.id}:${target.key}:${slotId??scene.after}`;
         const frozen=generationConfig(c),id=crypto.randomUUID();
@@ -183,7 +188,7 @@ async function enqueue(target,scenes,slotId=null,overrideConfig=null) {
             if(inserted)notify(`삽화 생성 완료 · ${scene.title}`,{kind:'success'});
             }catch(e){if(['NO_KEY','NAI_401','NAI_402','NAI_403','NAI_429','COOLDOWN'].includes(e.code))queue.paused=true;setWorkflowStatus(e.message);notice(`삽화 생성 실패 · ${e.message}`,true);throw e;}
             finally{progress?.close();}
-        },scene.title,{automatic:!!target.automaticCandidate});
+        },scene.title,{automatic:!!target.automaticCandidate,referenceIds:(frozen.references??[]).map(ref=>ref.id)});
         if(!added)notice('이 위치의 그림은 이미 생성 중입니다.');
     }
     notice('생성 대기열에 추가했습니다.');
@@ -193,6 +198,10 @@ async function compose(index=lastIndex(),manual=true,initial=null,slotId=null,re
     const state=viewState(target),saved=state.draft;
     if(renderConfig)target.config={...target.config,...renderConfig};
     else if(!initial&&saved.length&&state.draftConfig)target.config={...target.config,...generationConfig(validateConfig({...target.config,...state.draftConfig}))};
+    if(target.config.references?.length){
+        const available=new Set((await request('references')).references.map(ref=>ref.id)),kept=target.config.references.filter(ref=>available.has(ref.id));
+        if(kept.length!==target.config.references.length){target.config.references=kept;notice('삭제된 참조를 제외하고 장면을 열었습니다. 생성 전에 설정을 확인하세요.');}
+    }
     const stored=readStoredInjection(state.injected,target.snapshot.source);
     if(manual&&!initial&&!saved.length&&stored?.raw&&!stored.value)throw new Error(`저장된 삽화 지시를 읽지 못했습니다: ${stored.error??'JSON 형식 오류'}`);
     const embedded=stored?.value??extractInjectedPlan(target.snapshot.source).value;
@@ -360,6 +369,12 @@ const api={settings,saveSettings,visualSettings,hasVisualOverride:()=>!!context(
     saveVisual:async(value,where,expectedScope)=>{const c=cleanSettings(value);if(where==='account'){saveSettings(c);return;}if(expectedScope&&expectedScope!==scope())throw new Error('편집 중 채팅이 바뀌었습니다. 인물 탭을 다시 불러온 뒤 저장하세요.');const ctx=context();if(!ctx.getCurrentChatId())throw new Error('채팅을 먼저 열어 주세요.');ctx.chatMetadata[KEY]??={};ctx.chatMetadata[KEY].visual=Object.fromEntries(['world','direction','playerMode','library'].map(k=>[k,c[k]]));await ctx.saveMetadata();},
     resetVisual:async()=>{const c=context();if(c.chatMetadata?.[KEY])delete c.chatMetadata[KEY].visual;await c.saveMetadata();},
     references:async()=>(await request('references')).references,uploadReference:value=>request('references',value),
+    deleteReference:async id=>{
+        await request('references/delete',{id});
+        queue.cancelWaiting(item=>item.referenceIds?.includes(id));
+        const currentValue=settings();
+        saveSettings({...currentValue,references:currentValue.references.filter(ref=>ref.id!==id),presets:currentValue.presets.map(preset=>({...preset,config:{...preset.config,references:(preset.config.references??[]).filter(ref=>ref.id!==id)}}))});
+    },
     importScene:async(scene,config)=>{const target=capture();return compose(target.index,true,[{...scene,after:target.snapshot.blocks.at(-1).index,evidence:''}],null,generationConfig(config));},
     compose,analyze:()=>compose(lastIndex(),false),health:force=>checkHealth(force),account:()=>request('account'),jobs:async()=>(await request('jobs')).jobs,
     showPlans,chatImages:()=>context().chat.flatMap(message=>Object.values(message.extra?.[KEY]?.views??{}).flatMap(view=>(view.slots??[]).flatMap(slot=>slot.versions??[]))),

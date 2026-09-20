@@ -85,6 +85,9 @@ details.ap2-group > .ap2-group-content { padding: 0 10px 4px; }
 .ap2-stack { display: flex; flex-direction: column; gap: 10px; }
 .ap2-card { min-width: 0; padding: 12px; border: 1px solid var(--ap2-border); border-radius: 6px; margin-bottom: 10px; }
 .ap2-card > strong, .ap2-card > small { display: block; margin-bottom: 6px; }
+.ap2-reference-heading { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+.ap2-reference-heading > strong { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.ap2-reference-heading > button { flex: 0 0 auto; }
 .ap2-character { padding: 8px 10px; border: 1px solid var(--ap2-border); border-radius: 5px; }
 .ap2-character summary { cursor: pointer; font-size: .86em; }
 .ap2-character[open] > summary { margin-bottom: 10px; }

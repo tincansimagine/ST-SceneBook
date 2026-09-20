@@ -2,7 +2,7 @@ import { mkdir, readFile, writeFile, rename, readdir } from 'node:fs/promises';
 import path from 'node:path';
 import { createHash, randomInt, randomUUID } from 'node:crypto';
 import { buildPayload, normalizeScene, validateConfig } from './core.mjs';
-import { applyReferences } from './references.mjs';
+import { applyReferences,deleteReference } from './references.mjs';
 
 export class ApiError extends Error {
     constructor(status, message, code = 'REQUEST_FAILED') { super(message); this.status = status; this.code = code; }
@@ -61,6 +61,17 @@ export class GenerationService {
         const record=JSON.parse(await readFile(file,'utf8'));if(record.status!=='done')throw new ApiError(409,'완성된 이미지만 검수할 수 있습니다.');
         record.review={summary:review.summary,issues:review.issues,created:Date.now()};await atomic(file,record);return record;
     }
+    async deleteReference(directories,id){
+        if(!validId(id))throw new ApiError(400,'잘못된 참조 이미지 ID입니다.','INVALID_REFERENCE');
+        const dirs=await this.locations(directories);
+        // Share the per-user generation lock so deletion cannot race an image
+        // read or encoding request from another tab on the same account.
+        if(this.active.has(dirs.user))throw new ApiError(409,'이미지 생성 중에는 참조를 삭제할 수 없습니다. 완료 후 다시 시도하세요.','BUSY');
+        this.active.set(dirs.user,{referenceId:id});
+        try{return await deleteReference(directories,id);}
+        catch{throw new ApiError(500,'참조 이미지를 삭제하지 못했습니다. 잠시 후 다시 시도하세요.','REFERENCE_DELETE_FAILED');}
+        finally{this.active.delete(dirs.user);}
+    }
     async generate(directories, key, input) {
         if (!key) throw new ApiError(401, 'SillyTavern API 연결에서 NovelAI 키를 먼저 저장하세요.', 'NO_KEY');
         if (!validId(input?.id)) throw new ApiError(400, '올바른 작업 ID가 필요합니다.');
@@ -94,7 +105,10 @@ export class GenerationService {
             await atomic(file, record);
             const timeout = setTimeout(() => controller.abort(), this.timeoutMs);
             try {
-                if(config.references.length)await applyReferences(payload,config,directories,key,this.fetch,controller.signal);
+                if(config.references.length){
+                    try{await applyReferences(payload,config,directories,key,this.fetch,controller.signal);}
+                    catch(error){if(error.code==='REFERENCE_NOT_FOUND')throw new ApiError(400,error.message,error.code);throw error;}
+                }
                 const response = await this.fetch('https://image.novelai.net/ai/generate-image', {
                     method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${key}` },
                     body: JSON.stringify(payload), signal: controller.signal,

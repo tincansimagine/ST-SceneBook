@@ -1,4 +1,4 @@
-import { mkdir,readFile,writeFile,readdir } from 'node:fs/promises';
+import { mkdir,readFile,writeFile,readdir,unlink } from 'node:fs/promises';
 import path from 'node:path';
 import { randomUUID,createHash } from 'node:crypto';
 const idPattern=/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i;
@@ -16,13 +16,32 @@ export async function saveReference(dirs,input){
     const loc=await locations(dirs);const record={id,label,width,height,url:`/user/images/autopic2/${id}.png`};
     await writeFile(path.join(loc.images,id+'.png'),buffer);await writeFile(path.join(loc.meta,id+'.json'),JSON.stringify(record));return record;
 }
-export async function listReferences(dirs){const {meta}=await locations(dirs);const files=(await readdir(meta)).filter(f=>f.endsWith('.json')&&idPattern.test(f.slice(0,-5)));return Promise.all(files.map(async f=>JSON.parse(await readFile(path.join(meta,f),'utf8'))));}
+export async function listReferences(dirs){const {meta}=await locations(dirs);const files=(await readdir(meta)).filter(f=>f.endsWith('.json')&&idPattern.test(f.slice(0,-5)));const records=await Promise.all(files.map(async f=>{try{return JSON.parse(await readFile(path.join(meta,f),'utf8'));}catch(e){if(e.code==='ENOENT')return null;throw e;}}));return records.filter(Boolean);}
+export async function deleteReference(dirs,id){
+    if(typeof id!=='string'||!idPattern.test(id))throw new Error('잘못된 참조 이미지 ID입니다.');
+    const loc=await locations(dirs),file=path.join(loc.meta,id+'.json');let record;
+    try{record=JSON.parse(await readFile(file,'utf8'));}catch(e){if(e.code==='ENOENT')return{id,deleted:false};throw e;}
+    // Only an uploaded reference record authorizes deleting a PNG. Generated
+    // images share the directory and must never be deleted by a guessed job ID.
+    if(record.id!==id||record.url!==`/user/images/autopic2/${id}.png`)throw new Error('참조 이미지 등록 정보를 확인하세요.');
+    for(const target of [path.join(loc.images,id+'.png'),file]){
+        try{await unlink(target);}catch(e){if(e.code!=='ENOENT')throw e;}
+    }
+    return{id,deleted:true};
+}
 export async function applyReferences(payload,config,dirs,key,fetchImpl,signal){
     const loc=await locations(dirs);
-    for(const ref of config.references??[]){
+    // Resolve every input before any paid encoding request. Missing references
+    // must not consume credits for the other inputs or silently change the image.
+    const inputs=await Promise.all((config.references??[]).map(async ref=>{
         if(!idPattern.test(ref.id))throw new Error('잘못된 레퍼런스 ID입니다.');
-        const metadata=JSON.parse(await readFile(path.join(loc.meta,ref.id+'.json'),'utf8'));
-        const image=(await readFile(path.join(loc.images,ref.id+'.png'))).toString('base64');
+        try{
+            const metadata=JSON.parse(await readFile(path.join(loc.meta,ref.id+'.json'),'utf8'));
+            const image=(await readFile(path.join(loc.images,ref.id+'.png'))).toString('base64');
+            return{ref,metadata,image};
+        }catch(e){if(e.code==='ENOENT')throw Object.assign(new Error('삭제되었거나 없는 참조 이미지입니다. 참조 설정을 확인하세요.'),{code:'REFERENCE_NOT_FOUND'});throw e;}
+    }));
+    for(const {ref,metadata,image}of inputs){
         if(ref.kind==='precise'){
             if(![[1024,1536],[1536,1024],[1472,1472]].some(([w,h])=>w===metadata.width&&h===metadata.height))throw new Error('Precise Reference를 허용된 캔버스 크기로 다시 등록하세요.');
             Object.assign(payload.parameters,{

@@ -32,7 +32,7 @@ export function registerRoutes(router, { service, readKey, vertexRequest }) {
     };
     router.get('/health', wrap(async (req, res) => {
         await service.locations(req.user.directories);
-        res.json({ version: '0.4.3', models: MODELS, hasKey: !!readKey(req.user.directories) });
+        res.json({ version: '0.4.4', models: MODELS, hasKey: !!readKey(req.user.directories) });
     }));
     router.get('/jobs', wrap(async (req, res) => res.json({ jobs: await service.list(req.user.directories) })));
     router.post('/vertex',wrap(async(req,res)=>{
@@ -47,6 +47,7 @@ export function registerRoutes(router, { service, readKey, vertexRequest }) {
     router.post('/references',wrap(async(req,res)=>{
         try{res.json(await saveReference(req.user.directories,req.body));}catch(e){throw new ApiError(400,e.message,'INVALID_REFERENCE');}
     }));
+    router.post('/references/delete',wrap(async(req,res)=>res.json(await service.deleteReference(req.user.directories,req.body?.id))));
     router.post('/generate', wrap(async (req, res) => {
         const result = await service.generate(req.user.directories, readKey(req.user.directories), req.body);
         if (!res.destroyed) res.json(result);
