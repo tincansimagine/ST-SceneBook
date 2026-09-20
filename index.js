@@ -1,12 +1,12 @@
 import { ConnectionManagerRequestService } from '../../shared.js';
 import { requestAnalysis,analysisError } from './src/connection.mjs';
 import { notify,progressNotice } from './src/notifications.mjs';
-import { DEFAULTS, MODELS, validateConfig, normalizeScene, safeImagePath, sourceKey, number, text } from './plugin/core.mjs';
-import { createContext, compileCharacter, planInstruction, validateAnchor, normalized } from './src/context.mjs';
+import { MODELS, validateConfig, normalizeScene, safeImagePath, sourceKey, number, text } from './plugin/core.mjs';
+import { createContext, compileCharacter, planInstruction, scenePosition, validateAnchor, normalized } from './src/context.mjs';
 import { validateTemplate } from './src/prompts.mjs';
 import { parsePlanJson } from './src/plan-json.mjs';
 import { AutomaticResponses, workflowEnabled } from './src/automatic.mjs';
-import { initializeSettings,preserveSettings,settingsHistory } from './src/settings.mjs';
+import { CLIENT_DEFAULTS as DEFAULTS,initializeSettings,preserveSettings,settingsHistory } from './src/settings.mjs';
 import { visualFields,characterKey,characterVisuals,hasVisualScope,activeVisualScope,resolveVisualSettings } from './src/visual-settings.mjs';
 import { createHealthCheck } from './src/server-health.mjs';
 import { renderInjection, validateInjectionTemplate, extractInjectedPlan, readStoredInjection, injectedScenes } from './src/injection.mjs';
@@ -147,14 +147,15 @@ async function analyze(target,existing=[],direction='',revisionScope='all') {
         if(!Array.isArray(value.scenes)||value.scenes.length>target.config.maxScenes)throw new Error('분석 결과의 장면 수가 설정과 맞지 않습니다.');
         if(existing.length&&value.scenes.length!==existing.length)throw new Error('수정 중 장면 수가 바뀌었습니다. 기존 초안을 유지합니다.');
         const errors=[],accepted=[];
-        for(const [i,raw] of value.scenes.entries()){
+        for(const [i,input] of value.scenes.entries()){
             try{
+                const raw=scenePosition(input,target.snapshot,target.config.placement);
+                if(existing[i]){raw.after=existing[i].after;raw.evidence=existing[i].evidence;}
                 const states=timeline?resolveAt(timeline,raw,target.snapshot):null;
                 const scene=normalizeScene({...raw,characters:(raw.characters??[]).map(ch=>{
                     const identity=target.config.library.find(x=>x.id===ch.id||x.name===ch.name),state=states?.get(identity?.id);
                     return compileCharacter(state?{...ch,outfit:state.outfit,profileId:state.profileId||ch.profileId}:ch,target.config.library,target.config.playerMode);
                 }).filter(Boolean)},target.config.model,target.snapshot.blocks.length);
-                validateAnchor(scene,target.snapshot);
                 if(existing.length&&!existing.some(x=>x.after===scene.after))throw new Error('부분 수정에서 삽입 위치가 바뀌었습니다.');
                 accepted.push(existing.length?mergeRevision(existing[i],scene,revisionScope):scene);
             }catch(e){errors.push(`${i+1}번: ${e.message}`);if(existing[i])accepted.push(structuredClone(existing[i]));}
@@ -188,7 +189,7 @@ async function attach(target,job,slotId=null) {
     if(!current(target)){notice('그림을 완성했습니다. 대상 답변이 바뀌어 갤러리·복구에 보관했습니다.');return false;}
     const state=viewState(target),scene=job.scene;
     let slot=state.slots.find(s=>s.id===slotId);
-    if(!slot){slot={id:slotId??crypto.randomUUID(),anchor:validateAnchor(scene,target.snapshot),versions:[],selected:0};state.slots.push(slot);}
+    if(!slot){slot={id:slotId??crypto.randomUUID(),anchor:validateAnchor(scene,target.snapshot,target.config.placement),versions:[],selected:0};state.slots.push(slot);}
     if(slot.versions.some(v=>v.id===job.id))return;
     if(slot.deleted){slot.versions.push(job);await saveMessage(target);notice('이미 삭제한 삽화의 생성 결과는 갤러리에 보관했습니다.');return false;}
     slot.versions.push(job);slot.selected=slot.versions.length-1;slot.hidden=false;
@@ -199,8 +200,8 @@ async function enqueue(target,scenes,slotId=null,overrideConfig=null) {
     if(slotId&&viewState(target,false)?.slots.find(slot=>slot.id===slotId)?.deleted)throw new Error('이미 삭제한 삽화입니다. 갤러리에서 다시 삽입할 수 있습니다.');
     if(!scenes.length)throw new Error('생성할 장면을 추가하세요.');
     const c=overrideConfig??target.config;
-    const checked=scenes.map(s=>normalizeScene(s,c.model,target.snapshot.blocks.length));
-    checked.forEach(s=>validateAnchor(s,target.snapshot));validateConfig(c);
+    const checked=scenes.map(s=>normalizeScene(scenePosition(s,target.snapshot,target.config.placement),c.model,target.snapshot.blocks.length));
+    validateConfig(c);
     if(sessionRequests+queue.items.filter(x=>x.state==='waiting').length+checked.length>settings().sessionLimit)throw new Error('이번 접속의 생성 요청 한도를 초과합니다. 생성 설정에서 한도를 조정하세요.');
     const health=await checkHealth();if(!health.hasKey)throw new Error('SillyTavern에서 NovelAI 키를 먼저 저장하세요.');
     if(c.references?.length){
@@ -208,7 +209,7 @@ async function enqueue(target,scenes,slotId=null,overrideConfig=null) {
         if(c.references.some(ref=>!available.has(ref.id)))throw new Error('삭제된 참조 이미지가 포함되어 있습니다. 톱니바퀴로 장면을 다시 열어 확인한 뒤 생성하세요.');
     }
     for(const [position,scene] of checked.entries()){
-        const key=`${target.scope}:${target.id}:${target.key}:${slotId??scene.after}`;
+        const key=`${target.scope}:${target.id}:${target.key}:${slotId??`scene-${position}`}`;
         const frozen=generationConfig(c),id=crypto.randomUUID();
         const added=queue.add(key,async()=>{
             let progress;
@@ -231,7 +232,7 @@ async function enqueue(target,scenes,slotId=null,overrideConfig=null) {
 async function compose(index=lastIndex(),manual=true,initial=null,slotId=null,renderConfig=null) {
     const target=capture(index);
     const state=viewState(target),saved=state.draft;
-    if(renderConfig)target.config={...target.config,...renderConfig};
+    if(renderConfig)target.config={...target.config,...generationConfig(renderConfig)};
     else if(!initial&&saved.length&&state.draftConfig)target.config={...target.config,...generationConfig(validateConfig({...target.config,...state.draftConfig}))};
     if(target.config.references?.length){
         const available=new Set((await request('references')).references.map(ref=>ref.id)),kept=target.config.references.filter(ref=>available.has(ref.id));
@@ -288,6 +289,7 @@ function renderMessage(index) {
     block.querySelectorAll('.ap2-tools,.ap2-figure').forEach(x=>x.remove());
     const nodes=[];rendered.set(content,{signature,nodes});
     if(!state||state.source!==m.mes)return;
+    const inlineTails=new Map();
     for(const slot of state.slots??[]){
         if(slot.hidden||slot.deleted)continue;
         const job=slot.versions?.[slot.selected];if(!job||!safeImagePath(job.url))continue;
@@ -311,8 +313,9 @@ function renderMessage(index) {
             figure.append(navigation);
         }
         const candidates=[...content.querySelectorAll('p')].filter(p=>!p.closest('details,pre,table,.ap2-figure'));
-        const anchor=config.placement==='inline'?candidates.find(p=>normalized(p.textContent)===normalized(slot.anchor.quote.replace(/[*_]/g,''))):null;
-        if(anchor)anchor.after(figure);else content.append(figure);
+        const quote=slot.anchor?.quote;
+        const anchor=config.placement==='inline'&&quote?candidates.find(p=>normalized(p.textContent)===normalized(quote.replace(/[*_]/g,''))):null;
+        if(anchor){(inlineTails.get(anchor)??anchor).after(figure);inlineTails.set(anchor,figure);}else content.append(figure);
         nodes.push(figure);
     }
 }
@@ -400,7 +403,7 @@ function showPlans(){
 }
 const api={settings,saveSettings,visualSettings,hasVisualOverride:where=>hasVisualScope(context(),where),visualScope:()=>activeVisualScope(context()),visualCharacterKey:()=>characterKey(context()),hasChat:()=>!!context().getCurrentChatId(),
     contextKey:scope,status:()=>analysisLocks.size?'답변 분석 중':queue.running?'삽화 생성 중':queue.paused?'생성 일시정지':workflowStatus,
-    exportChat:()=>downloadChat(context().chat,context().getCurrentChatId()??'삽화 채팅'),
+    exportChat:()=>downloadChat(context().chat,context().getCurrentChatId()??'삽화 채팅',settings().placement),
     saveVisual,resetVisual,
     references:async()=>(await request('references')).references,uploadReference:value=>request('references',value),
     deleteReference:async id=>{

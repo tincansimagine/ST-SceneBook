@@ -172,7 +172,7 @@ export function studio(api,host=null) {
             addField(advanced,fields,'budgetGuard','비용 보호',c.budgetGuard,{type:'checkbox',help:'1메가픽셀·28 Steps 제한. 무료 생성을 보장하지 않습니다.'});
             const updateModel=()=>{const v5=model.value.startsWith('nai-diffusion-5-');if(v5)scheduler.value='karras';scheduler.disabled=v5;transparent.disabled=!v5;if(!v5)transparent.checked=false;};model.addEventListener('change',updateModel);updateModel();
             const display=settingGroup(page,'채팅 표시',true);
-            addField(display,fields,'placement','삽입 위치',c.placement,{choices:[['inline','문단 뒤'],['end','답변 아래']]});
+            addField(display,fields,'placement','삽입 위치',c.placement,{choices:[['end','답변 아래'],['inline','문단 뒤']]});
             addField(display,fields,'displayWidth','최대 너비',c.displayWidth,{type:'number',min:240,max:1200,step:1});
             addField(display,fields,'compact','작게 표시',c.compact,{type:'checkbox'});
             saveBar(page,()=>api.saveSettings({...api.settings(),...readFields(fields)}));
@@ -376,7 +376,7 @@ export function compareVersions(versions,currentIndex){
 export function mountSettings(api,container){
     const drawer=el('div','inline-drawer');drawer.id='ap2-settings';
     const header=el('div','inline-drawer-toggle inline-drawer-header');header.tabIndex=0;header.setAttribute('role','button');header.setAttribute('aria-expanded','false');header.setAttribute('aria-controls','ap2-settings-content');
-    const label=el('b','ap2-drawer-title','씬북'),version=el('small','ap2-version','0.4.10'),status=el('small','ap2-muted','');status.id='ap2-status';label.append(version);
+    const label=el('b','ap2-drawer-title','씬북'),version=el('small','ap2-version','0.4.11'),status=el('small','ap2-muted','');status.id='ap2-status';label.append(version);
     const icon=el('div','inline-drawer-icon fa-solid fa-circle-chevron-down down');icon.setAttribute('aria-hidden','true');header.append(label,status,icon);
     const content=el('div','inline-drawer-content ap2-settings');content.id='ap2-settings-content';content.style.display='none';
     drawer.append(header,content);container.append(drawer);

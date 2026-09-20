@@ -39,7 +39,7 @@ export function createContext(chat, index, options = {}) {
         .filter(m => !m.is_system).map(m => ({ role: m.is_user ? 'user' : 'character', name: String(m.name ?? ''), text: String(m.mes ?? '').slice(-8000) }));
     return {
         source: String(target.mes ?? ''), swipe: target.swipe_id ?? 0,
-        history, blocks: narrativeBlocks(target.mes),
+        history, blocks: illustrationBlocks(target.mes),
         historical: index < chat.length - 1,
         // Explicit, static story data; no globally mutable "latest state" leaks into old turns.
         world: String(options.world ?? '').slice(0, 12000),
@@ -47,11 +47,26 @@ export function createContext(chat, index, options = {}) {
         library: structuredClone(options.library ?? []),
     };
 }
-export function validateAnchor(scene, context) {
-    const block = context.blocks.find(b => b.index === scene.after);
-    if (!block) throw new Error('본문에 존재하지 않는 삽입 위치입니다.');
-    if (scene.evidence && !normalized(block.content).includes(normalized(scene.evidence))) throw new Error('장면의 원문 근거가 선택한 문단에 없습니다.');
-    return { index: block.index, quote: block.content, source: context.source };
+export function illustrationBlocks(source) {
+    const blocks=narrativeBlocks(source),content=String(source??'');
+    // HTML-formatted replies can have no plain paragraphs. The reply itself is
+    // still a valid illustration target; paragraph parsing is only a UI aid.
+    return blocks.length||!content.trim()?blocks:[{index:1,content:content.trim(),start:0,end:content.length}];
+}
+export function scenePosition(scene, context, placement='end') {
+    if(!scene||typeof scene!=='object'||Array.isArray(scene))return scene;
+    const blocks=context.blocks??[],tail=blocks.at(-1)?.index??1;
+    if(placement!=='inline')return{...scene,after:tail,evidence:''};
+    const quote=typeof scene.evidence==='string'&&scene.evidence.length<=2000?normalized(scene.evidence):'';
+    const matches=quote?blocks.filter(b=>normalized(b.content).includes(quote)):[];
+    const block=matches.length===1?matches[0]:null;
+    return{...scene,after:block?.index??tail,evidence:block?(quote||block.content.slice(0,2000)):''};
+}
+export function validateAnchor(scene, context, placement='end') {
+    const block = placement==='inline'&&context.blocks.find(b => b.index === scene.after);
+    if(block&&scene.evidence&&normalized(block.content).includes(normalized(scene.evidence)))return{index:block.index,quote:block.content,source:context.source};
+    // Empty quote marks a reply-level attachment, independent of paragraphs.
+    return { index: 0, quote: '', source: context.source };
 }
 export function compileCharacter(character, library, playerMode = 'auto') {
     const entry = library.find(x => x.id === character.id) ?? library.find(x => x.name === character.name);

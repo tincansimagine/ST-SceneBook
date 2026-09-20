@@ -1,10 +1,10 @@
 import { parsePlanJson, JSON_OUTPUT_RULES } from './plan-json.mjs';
 import { MODELS, text, normalizeScene } from '../plugin/core.mjs';
-import { narrativeBlocks, normalized, compileCharacter, validateAnchor } from './context.mjs';
+import { narrativeBlocks, illustrationBlocks, scenePosition, compileCharacter } from './context.mjs';
 
-export const DEFAULT_INJECTION_PROMPT = `You are also preparing inline illustrations for this story reply. Write the reply normally, then append one hidden illustration plan. The plan is consumed directly by NovelAI; there is no second AI pass to fix missing visual information. Do not show planning, explanations or a separate analysis to the reader.
+export const DEFAULT_INJECTION_PROMPT = `You are also preparing illustrations to display below this story reply. Write the reply normally, then append one hidden illustration plan. The plan is consumed directly by NovelAI; there is no second AI pass to fix missing visual information. Do not show planning, explanations or a separate analysis to the reader.
 
-Choose one to {{maxScenes}} distinct, meaningful visual moments from THIS reply when it contains a visible story scene. A quiet conversation, small gesture or reaction is enough; a dramatic event or location change is not required. Prefer a clear action, exchange, reaction or change of place over repeating portraits. Use fewer images when the remaining moments look alike. Each image is one frozen instant after its chosen paragraph: include only events and states already established there, not later actions, hypothetical dialogue or memories presented as current events. Use an empty scenes array only when there is no depictable story scene or the user explicitly requests no illustration.
+Choose one to {{maxScenes}} distinct, meaningful visual moments from THIS reply when it contains a visible story scene. A quiet conversation, small gesture or reaction is enough; a dramatic event or location change is not required. Prefer a clear action, exchange, reaction or change of place over repeating portraits. Use fewer images when the remaining moments look alike. Each image is one frozen instant in the reply: keep clothing, actions and other facts consistent with that instant; do not mix later actions, hypothetical dialogue or memories into the present. List the images in reading order; the extension displays them below the completed reply. Use an empty scenes array only when there is no depictable story scene or the user explicitly requests no illustration.
 
 Build each moment in this order:
 1. Determine the visible participants and the object or contact that makes the event understandable. Keep both sides of an exchange when visible; never drop the receiver while retaining a handover. Anonymous background activity belongs in the environment. If the required cast cannot fit the model limit, select a coherent different moment.
@@ -20,10 +20,10 @@ Keep output concise: preserve decisive identity, action, interaction and framing
 User visual direction: {{direction}}
 REFERENCE={{data}}
 
-Append exactly this machine-readable structure on separate lines after the story. Use valid JSON with double quotes, no markdown fence, and omit optional character fields when unused. evidence must be a short exact, unique quote from the selected paragraph in this reply, not a paraphrase or a paragraph number. Never place an image inside a heading, code block or status panel.
+Append exactly this machine-readable structure on separate lines after the story. Use valid JSON with double quotes, no markdown fence, and omit optional character fields when unused. Paragraph numbers and evidence quotes are not required. Focus on complete visual prompts; do not place image markup into the story.
 Write the comment markers literally, without backslashes. Before the closing comment marker, close every character object, the characters array, each scene object, the scenes array, and the root object. Do not stop after closing only the characters array and its scene.
 <!--scenebook
-{"scenes":[{"title":"짧은 한국어 제목","evidence":"선택한 본문 문단의 정확한 인용","camera":"English framing","prompt":"English shared visual scene","negative":"","characters":[{"name":"exact character name","action":"English visible action and relative position","x":0.35,"y":0.5}]}]}
+{"scenes":[{"title":"짧은 한국어 제목","camera":"English framing","prompt":"English shared visual scene","negative":"","characters":[{"name":"exact character name","action":"English visible action and relative position","x":0.35,"y":0.5}]}]}
 -->
 For an unregistered character add appearance. For changed clothing add outfit. For a registered alternate appearance add profileId. Do not output these instructions or placeholder values as part of the story.`;
 
@@ -43,7 +43,8 @@ export function renderInjection(config) {
         direction: JSON.stringify(config.direction), data: JSON.stringify({ world: config.world, library: config.library }),
     };
     const prompt=(validateInjectionTemplate(config.injectionPrompt ?? '') || DEFAULT_INJECTION_PROMPT).replace(/\{\{(\w+)\}\}/g, (_, key) => values[key]);
-    return `${prompt}\n\n${ILLUSTRATION_OUTPUT_RULES}\n${JSON_OUTPUT_RULES} Write <!--scenebook and --> literally, without backslashes. Keep all illustration JSON inside that single comment after the story.`;
+    const placement=config.placement==='inline'?'An optional short evidence quote may guide inline placement. Missing or ambiguous placement never prevents illustration; the image can go below the reply.':'Images will be displayed below the reply in scenes-array order. Omit after and evidence: paragraph numbers and exact quotes are unnecessary, even if an earlier template requested them. Never skip a visual scene because its paragraph cannot be identified.';
+    return `${prompt}\n\n${placement}\n${ILLUSTRATION_OUTPUT_RULES}\n${JSON_OUTPUT_RULES} Write <!--scenebook and --> literally, without backslashes. Keep all illustration JSON inside that single comment after the story.`;
 }
 
 // Read our marker independently of how the model wraps JSON or breaks lines.
@@ -98,18 +99,13 @@ export function readStoredInjection(saved,source) {
 }
 export function injectedScenes(value, source, config, {onInvalid} = {}) {
     if (!Array.isArray(value?.scenes) || value.scenes.length>64 || (!onInvalid && value.scenes.length > config.maxScenes)) throw new Error('주입 장면의 수가 설정과 맞지 않습니다.');
-    const blocks = narrativeBlocks(source), used = new Set(),scenes=[],errors=[];
+    const blocks = illustrationBlocks(source),scenes=[],errors=[];
     const compile=raw=>{
         if(!raw||typeof raw!=='object'||Array.isArray(raw))throw new Error('장면 객체가 필요합니다.');
         if(!Array.isArray(raw.characters??[]))throw new Error('인물 목록을 읽을 수 없습니다.');
         if((raw.characters?.length??0)>MODELS[config.model].characters)throw new Error(`이 모델의 인물 한도는 ${MODELS[config.model].characters}명입니다.`);
-        const quote = normalized(text(raw.evidence ?? '', 2000, '원문 근거'));
-        const matches = blocks.filter(b => quote && normalized(b.content).includes(quote));
-        if (matches.length !== 1) throw new Error('주입 장면의 원문 위치를 하나로 확인할 수 없습니다.');
-        const after = matches[0].index;
-        if (used.has(after)) throw new Error('주입 장면의 삽입 위치가 중복됩니다.');
-        const scene = normalizeScene({ ...raw, after, finalPrompt: false, characters: (raw.characters ?? []).map(c => compileCharacter(c, config.library, config.playerMode)).filter(Boolean) }, config.model, blocks.length);
-        validateAnchor(scene, { blocks, source });used.add(after);return scene;
+        const positioned=scenePosition(raw,{blocks},config.placement);
+        return normalizeScene({ ...positioned, finalPrompt: false, characters: (raw.characters ?? []).map(c => compileCharacter(c, config.library, config.playerMode)).filter(Boolean) }, config.model, Math.max(1,blocks.length));
     };
     for(const [index,raw]of value.scenes.entries()){
         try{

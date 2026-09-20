@@ -1,6 +1,7 @@
 import { DEFAULTS } from '../plugin/core.mjs';
 import { migrateWorkflow } from './automatic.mjs';
 const KEY='autopic2',HISTORY='scenebookSettingsHistory';
+export const CLIENT_DEFAULTS={...DEFAULTS,placement:'end'};
 export function settingsSnapshot(value){return {...Object.fromEntries(Object.keys(DEFAULTS).filter(k=>value?.[k]!==undefined).map(k=>[k,structuredClone(value[k])])),characterVisuals:structuredClone(value?.characterVisuals??{})};}
 export function preserveSettings(store,value,{now=Date.now(),reason='변경 전',force=false}={}){
     const previous=store[KEY];
@@ -13,7 +14,10 @@ export function preserveSettings(store,value,{now=Date.now(),reason='변경 전'
     return store[KEY];
 }
 export function initializeSettings(store){
-    const saved=store[KEY],next=migrateWorkflow(saved,DEFAULTS);
+    const saved=store[KEY],next=migrateWorkflow(saved,CLIENT_DEFAULTS);
+    // Adopt reply-bottom placement once for existing installations, without
+    // changing prompts, generation settings or a later explicit inline choice.
+    if(next.replyPlacementVersion!==1){next.placement='end';next.replyPlacementVersion=1;}
     const changed=JSON.stringify(saved)!==JSON.stringify(next);
     if(changed)preserveSettings(store,next,{reason:'업데이트 전',force:true});
     return changed;

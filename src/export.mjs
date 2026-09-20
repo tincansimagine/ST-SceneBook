@@ -2,10 +2,10 @@ import { safeImagePath,sourceKey } from '../plugin/core.mjs';
 import { narrativeBlocks } from './context.mjs';
 
 const escape=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-export function exportMessages(chat){
+export function exportMessages(chat,placement='end'){
     return chat.filter(m=>!m.is_system).map(m=>{
         const state=m.extra?.autopic2?.views?.[sourceKey(m.mes,m.swipe_id??0)];
-        const images=state?.source===m.mes?(state.slots??[]).filter(s=>!s.hidden&&!s.deleted).map(s=>({job:s.versions?.[s.selected],anchor:s.anchor})).filter(s=>safeImagePath(s.job?.url)):[];
+        const images=state?.source===m.mes?(state.slots??[]).filter(s=>!s.hidden&&!s.deleted).map(s=>({job:s.versions?.[s.selected],anchor:placement==='inline'?s.anchor:null})).filter(s=>safeImagePath(s.job?.url)):[];
         return{name:m.name??(m.is_user?'사용자':'캐릭터'),source:String(m.mes??''),images};
     });
 }
@@ -23,8 +23,8 @@ export function exportHtml(messages,assets,title='삽화 채팅'){
     }).join('\n');
     return `<!doctype html><html lang="ko"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data:; style-src 'unsafe-inline'"><title>${escape(title)}</title><style>body{background:#171c24;color:#ebeae6;font:16px/1.8 system-ui,sans-serif;margin:0}main{max-width:850px;padding:24px;margin:auto}article{padding:24px 0;border-bottom:1px solid #48505a}h1{font-size:26px}h2{font-size:16px;color:#b7d5bd}.text{white-space:pre-wrap;overflow-wrap:anywhere}figure{max-width:640px;margin:24px auto}img{display:block;width:100%;height:auto;border-radius:12px}figcaption{font-size:13px;opacity:.7;text-align:center;margin-top:8px}</style><main><h1>${escape(title)}</h1>${content}</main></html>`;
 }
-export async function downloadChat(chat,title){
-    const messages=exportMessages(structuredClone(chat)),assets=new Map();
+export async function downloadChat(chat,title,placement='end'){
+    const messages=exportMessages(structuredClone(chat),placement),assets=new Map();
     const urls=[...new Set(messages.flatMap(m=>m.images.map(i=>i.job.url)))];
     if(urls.length>200)throw new Error('한 번에 최대 200개의 삽화를 내보낼 수 있습니다.');
     let total=0;
