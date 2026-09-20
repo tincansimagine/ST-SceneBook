@@ -1,3 +1,4 @@
+import { parsePlanJson, JSON_OUTPUT_RULES } from './plan-json.mjs';
 import { MODELS, text, normalizeScene } from '../plugin/core.mjs';
 import { narrativeBlocks, normalized, compileCharacter, validateAnchor } from './context.mjs';
 
@@ -20,6 +21,7 @@ User visual direction: {{direction}}
 REFERENCE={{data}}
 
 Append exactly this machine-readable structure on separate lines after the story. Use valid JSON with double quotes, no markdown fence, and omit optional character fields when unused. evidence must be a short exact, unique quote from the selected paragraph in this reply, not a paraphrase or a paragraph number. Never place an image inside a heading, code block or status panel.
+Write the comment markers literally, without backslashes. Before the closing comment marker, close every character object, the characters array, each scene object, the scenes array, and the root object. Do not stop after closing only the characters array and its scene.
 <!--scenebook
 {"scenes":[{"title":"짧은 한국어 제목","evidence":"선택한 본문 문단의 정확한 인용","camera":"English framing","prompt":"English shared visual scene","negative":"","characters":[{"name":"exact character name","action":"English visible action and relative position","x":0.35,"y":0.5}]}]}
 -->
@@ -39,48 +41,84 @@ export function renderInjection(config) {
         playerRule: config.playerMode === 'pov' ? 'The player is off-camera; do not give them a visible character slot.' : 'Include the player only when visibly present.',
         direction: JSON.stringify(config.direction), data: JSON.stringify({ world: config.world, library: config.library }),
     };
-    return (validateInjectionTemplate(config.injectionPrompt ?? '') || DEFAULT_INJECTION_PROMPT).replace(/\{\{(\w+)\}\}/g, (_, key) => values[key]);
+    const prompt=(validateInjectionTemplate(config.injectionPrompt ?? '') || DEFAULT_INJECTION_PROMPT).replace(/\{\{(\w+)\}\}/g, (_, key) => values[key]);
+    return `${prompt}\n\n${JSON_OUTPUT_RULES} Write <!--scenebook and --> literally, without backslashes. Keep all illustration JSON inside that single comment after the story.`;
 }
 
 // Read our marker independently of how the model wraps JSON or breaks lines.
 // Ordinary fenced code examples remain untouched.
 export function extractInjectedPlan(source) {
     source=String(source);
-    const tokens=/^ {0,3}(`{3,}|~{3,})[^\n]*|<!--\s*scenebook\b\s*:?\s*/gim;
+    // Some models fence the entire final comment, despite the output contract.
+    // Unwrap only a final, comment-only block following an actual narrative.
+    const wrapped=source.match(/\n[ \t]*(`{3,}|~{3,})(?:html|json|scenebook)?[ \t]*\r?\n([ \t]*\\?(?:<!--|&lt;!--)\s*scenebook\b[\s\S]*?--(?:>|&gt;)[ \t]*)\r?\n[ \t]*\1[ \t]*$/i);
+    if(wrapped&&narrativeBlocks(source.slice(0,wrapped.index)).length){
+        const result=extractInjectedPlan(source.slice(0,wrapped.index)+'\n'+wrapped[2]);
+        if(!result.found)return{source,found:false,value:null};
+        return{...result,source:result.incomplete?source:result.source,repairs:[...new Set([...(result.repairs??[]),'주석 코드 블록 포장 제거'])]};
+    }
+    const tokens=/^ {0,3}(`{3,}|~{3,})[^\n]*|(?:<!--|&lt;!--)\s*scenebook\b\s*:?\s*/gim;
     const blocks=[],kept=[];let fence='',cursor=0,match;
     while((match=tokens.exec(source))){
         if(match[1]){if(!fence)fence=match[1];else if(match[1][0]===fence[0]&&match[1].length>=fence.length)fence='';continue;}
         if(fence)continue;
-        const end=source.indexOf('-->',tokens.lastIndex);
-        if(end<0)return{source,found:true,value:null,incomplete:true,raw:source.slice(match.index),error:'삽화 지시가 끝나기 전에 답변이 종료되었습니다.'};
-        kept.push(source.slice(cursor,match.index));
-        blocks.push({raw:source.slice(match.index,end+3),json:source.slice(tokens.lastIndex,end).trim()});
-        cursor=tokens.lastIndex=end+3;
+        const start=source[match.index-1]==='\\'?match.index-1:match.index;
+        const closing=/--(?:>|&gt;)/gi;closing.lastIndex=tokens.lastIndex;const close=closing.exec(source),end=close?.index??-1;
+        if(end<0)return{source,found:true,value:null,incomplete:true,raw:source.slice(start),error:'삽화 지시가 끝나기 전에 답변이 종료되었습니다.'};
+        const endOffset=end+close[0].length;
+        const payloadEnd=source[end-1]==='\\'?end-1:end;
+        kept.push(source.slice(cursor,start));
+        blocks.push({raw:source.slice(start,endOffset),json:source.slice(tokens.lastIndex,payloadEnd).trim(),escaped:start!==match.index||payloadEnd!==end,encoded:/&lt;/i.test(match[0])||close[0]!=='-->'});
+        cursor=tokens.lastIndex=endOffset;
     }
     if(!blocks.length)return{source,found:false,value:null};
     kept.push(source.slice(cursor));
     const cleaned=kept.join('').trimEnd(),raw=blocks.map(b=>b.raw).join('\n');
     try {
         if(raw.length>60000||blocks.length>6)throw new Error('삽화 지시의 개수나 길이가 너무 큽니다.');
-        const values=blocks.map(block=>{
+        const results=blocks.map(block=>{
             const wrapped=block.json.match(/^(`{3,}|~{3,})(?:json)?\s*\n([\s\S]*?)\n\1\s*$/i);
-            return JSON.parse(wrapped?wrapped[2]:block.json);
+            const parsed=parsePlanJson(wrapped?wrapped[2]:block.json);
+            if(block.escaped)parsed.repairs.unshift('주석 앞 역슬래시 제거');
+            if(block.encoded)parsed.repairs.unshift('HTML 주석 표기 복구');
+            return parsed;
         });
+        const values=results.map(result=>result.value),repairs=[...new Set(results.flatMap(result=>result.repairs))];
         if(values.some(v=>!Array.isArray(v?.scenes)))throw new Error('삽화 지시에 scenes 목록이 없습니다.');
-        return{source:cleaned,found:true,value:{scenes:values.flatMap(v=>v.scenes)},raw};
+        return{source:cleaned,found:true,value:{scenes:values.flatMap(v=>v.scenes)},raw,repairs};
     }catch(error){return{source:cleaned,found:true,value:null,raw,error:error.message};}
 }
-export function injectedScenes(value, source, config) {
-    if (!Array.isArray(value?.scenes) || value.scenes.length > config.maxScenes) throw new Error('주입 장면의 수가 설정과 맞지 않습니다.');
-    const blocks = narrativeBlocks(source), used = new Set();
-    return value.scenes.map(raw => {
+export function readStoredInjection(saved,source) {
+    if(!saved?.raw)return saved;
+    const parsed=extractInjectedPlan(saved.raw);
+    // Parsing an isolated saved comment yields an empty body. Preserve the
+    // associated reply; this helper must never replace it with that empty body.
+    return parsed.value?{...saved,...parsed,source,raw:saved.raw,error:undefined}:saved;
+}
+export function injectedScenes(value, source, config, {onInvalid} = {}) {
+    if (!Array.isArray(value?.scenes) || value.scenes.length>64 || (!onInvalid && value.scenes.length > config.maxScenes)) throw new Error('주입 장면의 수가 설정과 맞지 않습니다.');
+    const blocks = narrativeBlocks(source), used = new Set(),scenes=[],errors=[];
+    const compile=raw=>{
+        if(!raw||typeof raw!=='object'||Array.isArray(raw))throw new Error('장면 객체가 필요합니다.');
+        if(!Array.isArray(raw.characters??[]))throw new Error('인물 목록을 읽을 수 없습니다.');
+        if((raw.characters?.length??0)>MODELS[config.model].characters)throw new Error(`이 모델의 인물 한도는 ${MODELS[config.model].characters}명입니다.`);
         const quote = normalized(text(raw.evidence ?? '', 2000, '원문 근거'));
         const matches = blocks.filter(b => quote && normalized(b.content).includes(quote));
         if (matches.length !== 1) throw new Error('주입 장면의 원문 위치를 하나로 확인할 수 없습니다.');
         const after = matches[0].index;
         if (used.has(after)) throw new Error('주입 장면의 삽입 위치가 중복됩니다.');
-        used.add(after);
         const scene = normalizeScene({ ...raw, after, finalPrompt: false, characters: (raw.characters ?? []).map(c => compileCharacter(c, config.library, config.playerMode)).filter(Boolean) }, config.model, blocks.length);
-        validateAnchor(scene, { blocks, source }); return scene;
-    });
+        validateAnchor(scene, { blocks, source });used.add(after);return scene;
+    };
+    for(const [index,raw]of value.scenes.entries()){
+        try{
+            if(scenes.length>=config.maxScenes)throw new Error(`최대 장면 ${config.maxScenes}개를 초과했습니다.`);
+            scenes.push(compile(raw));
+        }catch(error){
+            if(!onInvalid)throw error;
+            const issue=`장면 ${index+1}: ${error.message}`;errors.push(issue);onInvalid(issue);
+        }
+    }
+    if(value.scenes.length&&!scenes.length)throw new Error(`생성 가능한 장면이 없습니다. ${errors[0]}`);
+    return scenes;
 }

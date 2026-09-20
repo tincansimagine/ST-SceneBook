@@ -4,10 +4,11 @@ import { notify,progressNotice } from './src/notifications.mjs';
 import { DEFAULTS, MODELS, validateConfig, normalizeScene, safeImagePath, sourceKey, number, text } from './plugin/core.mjs';
 import { createContext, compileCharacter, planInstruction, validateAnchor, normalized } from './src/context.mjs';
 import { validateTemplate } from './src/prompts.mjs';
+import { parsePlanJson } from './src/plan-json.mjs';
 import { AutomaticResponses, workflowEnabled } from './src/automatic.mjs';
 import { initializeSettings,preserveSettings,settingsHistory } from './src/settings.mjs';
 import { createHealthCheck } from './src/server-health.mjs';
-import { renderInjection, validateInjectionTemplate, extractInjectedPlan, injectedScenes } from './src/injection.mjs';
+import { renderInjection, validateInjectionTemplate, extractInjectedPlan, readStoredInjection, injectedScenes } from './src/injection.mjs';
 import { WorkQueue } from './src/queue.mjs';
 import { downloadChat } from './src/export.mjs';
 import { mergeRevision } from './src/revision.mjs';
@@ -104,7 +105,7 @@ async function analyze(target,existing=[],direction='',revisionScope='all') {
             timeline=validateTimeline(parsed,target.snapshot);
         }
         const response=await analysisRequest(target.config,planInstruction(target.snapshot,target.config,existing.length?existing:null,direction),Math.min(6000,1800*target.config.maxScenes));
-        let value;try{value=JSON.parse(String(response?.content??'').trim().replace(/^```(?:json)?\s*/i,'').replace(/\s*```$/,''));}catch{throw new Error('분석 응답의 JSON 형식이 잘못됐습니다. 기존 초안은 유지됩니다. 직접 작성하거나 재분석하세요.');}
+        let value;try{value=parsePlanJson(String(response?.content??'')).value;}catch{throw new Error('분석 응답을 형식 복구 후에도 읽지 못했습니다. 기존 초안은 유지됩니다.');}
         if(!Array.isArray(value.scenes)||value.scenes.length>target.config.maxScenes)throw new Error('분석 결과의 장면 수가 설정과 맞지 않습니다.');
         if(existing.length&&value.scenes.length!==existing.length)throw new Error('수정 중 장면 수가 바뀌었습니다. 기존 초안을 유지합니다.');
         const errors=[],accepted=[];
@@ -187,8 +188,11 @@ async function compose(index=lastIndex(),manual=true,initial=null,slotId=null,re
     const state=viewState(target),saved=state.draft;
     if(renderConfig)target.config={...target.config,...renderConfig};
     else if(!initial&&saved.length&&state.draftConfig)target.config={...target.config,...generationConfig(validateConfig({...target.config,...state.draftConfig}))};
-    const embedded=state.injected?.value??extractInjectedPlan(target.snapshot.source).value;
+    const stored=readStoredInjection(state.injected,target.snapshot.source);
+    if(manual&&!initial&&!saved.length&&stored?.raw&&!stored.value)throw new Error(`저장된 삽화 지시를 읽지 못했습니다: ${stored.error??'JSON 형식 오류'}`);
+    const embedded=stored?.value??extractInjectedPlan(target.snapshot.source).value;
     const scenes=initial??(saved.length?saved:manual?(embedded?injectedScenes(embedded,target.snapshot.source,target.config):[{title:'새 장면',prompt:'',after:target.snapshot.blocks.at(-1).index,characters:[]}]):await analyze(target));
+    if(stored?.value&&stored!==state.injected)state.injected=stored;
     const slot=viewState(target).slots.find(x=>x.id===slotId),previewUrl=slot?.versions?.[slot.selected]?.url;
     composer({context:target.snapshot,scenes,config:target.config,previewUrl,onAnalyze:(old,direction,scope)=>analyze(target,old,direction,scope),onGenerate:s=>enqueue(target,s,slotId),onDraft:async s=>{if(!current(target))throw new Error('편집 중 채팅이 변경됐습니다. 다시 열어 주세요.');viewState(target).draft=s;viewState(target).draftConfig=generationConfig(target.config);await saveMessage(target);}});
 }
@@ -266,7 +270,7 @@ async function processAutomatic(candidate) {
     // even on replies skipped by the interval. Store it against this exact swipe.
     let embedded=extractInjectedPlan(target.snapshot.source);
     if(!embedded.found){
-        if(state.injected?.found)embedded=state.injected;
+        if(state.injected?.found)embedded=readStoredInjection(state.injected,target.snapshot.source);
         else if(candidate.embedded?.found&&candidate.embedded.source===target.snapshot.source.trimEnd())embedded=candidate.embedded;
     }
     if(embedded.found&&!embedded.incomplete&&embedded.source!==target.snapshot.source){
@@ -287,7 +291,8 @@ async function processAutomatic(candidate) {
     try{
         await saveMessage(target);
         if(!embedded.value)throw new Error(`삽화 지시를 읽지 못했습니다: ${embedded.error??'JSON 형식 오류'} · 작업 → 지시 기록에서 확인하세요.`);
-        const scenes=injectedScenes(embedded.value,target.snapshot.source,target.config);
+        const warnings=[];state.automatic.warnings=warnings;
+        const scenes=injectedScenes(embedded.value,target.snapshot.source,target.config,{onInvalid:issue=>warnings.push(issue)});
         state.draft=scenes;state.draftConfig=generationConfig(target.config);
         if((state.automaticOrder-1)%c.every){state.automatic.status='skipped';state.automatic.error=`답변 간격 ${c.every} · 이번 답변 건너뜀`;setWorkflowStatus(state.automatic.error);await saveMessage(target);return;}
         if(c.automatic==='generate'&&scenes.length){
@@ -297,6 +302,7 @@ async function processAutomatic(candidate) {
         if(!current(target)||!workflowEnabled(settings())||candidate.generation?.stopped){state.automatic.status='cancelled';return;}
         if(settings().automatic==='generate'&&scenes.length){target.automaticCandidate=candidate;await enqueue(target,scenes);state.automatic.status='queued';}
         else {state.automatic.status='ready';setWorkflowStatus(scenes.length?`장면 ${scenes.length}개 준비됨 · 장면 편집에서 확인`:'이번 답변에는 삽화에 적합한 장면이 없습니다.');notice(scenes.length?`장면 ${scenes.length}개 준비됨 · 장면 편집에서 확인`:'이번 답변에는 생성할 삽화가 없습니다.');}
+        if(warnings.length)notice(`장면 ${scenes.length}개 처리 · ${warnings.length}개 제외. 작업 → 지시 기록에서 이유를 확인할 수 있습니다.`);
         await saveMessage(target);
     }catch(e){state.automatic.status='failed';state.automatic.error=e.message;if(current(target))await saveMessage(target);throw e;}
 }
@@ -309,9 +315,12 @@ function showPlans(){
         const row=el('details','ap2-guide-topic'),status=state.automatic?.status;
         row.append(el('summary','',`답변 ${index+1} · ${labels[status]??'지시 저장됨'}`));
         if(state.automatic?.error)row.append(el('p','',state.automatic.error));
+        if(state.automatic?.warnings?.length){const issues=el('ul','ap2-muted');for(const warning of state.automatic.warnings)issues.append(el('li','',warning));row.append(issues);}
         if(state.injected){
+            const stored=readStoredInjection(state.injected,message.mes);
             row.append(el('pre','ap2-code',state.injected.raw??JSON.stringify(state.injected.value??{error:state.injected.error},null,2)));
-            if(state.draft?.length||state.injected.value){
+            if(stored?.repairs?.length)row.append(el('p','ap2-muted',`형식 복구: ${stored.repairs.join(' · ')}. 장면 편집에서 이어서 생성할 수 있습니다.`));
+            if(state.draft?.length||stored?.value){
                 const expectedScope=scope(),source=message.mes,swipe=message.swipe_id??0;
                 row.append(button('장면 편집',()=>{const currentIndex=context().chat.indexOf(message);if(expectedScope!==scope()||currentIndex<0||message.mes!==source||(message.swipe_id??0)!==swipe)throw new Error('답변이 바뀌었습니다. 지시 기록을 다시 열어 주세요.');return compose(currentIndex);}));
             }
