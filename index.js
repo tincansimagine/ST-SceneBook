@@ -223,7 +223,7 @@ function openIllustration(index,slot) {
     const target=capture(index),job=slot.versions[slot.selected];
     if(!viewState(target,false)?.slots.includes(slot)||slot.deleted)throw new Error('대상 답변이 바뀌었습니다. 이미지를 다시 열어 주세요.');
     const ensureCurrent=()=>{if(!current(target)||slot.deleted)throw new Error('대상 답변이 바뀌었습니다. 이미지를 다시 열어 주세요.');return context().chat.indexOf(target.message);};
-    const {dialog}=viewer(job,{
+    const dialog=viewer(job,{
         actions:[{label:'삭제',icon:'fa-trash-can',run:async()=>{if(await deleteIllustration(target,slot))dialog.close();}}],
         more:[
             {label:'AI 검수',icon:'fa-magnifying-glass',run:()=>reviewImage(job)},
