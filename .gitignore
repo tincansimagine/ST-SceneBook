@@ -1,0 +1,14 @@
+# Local development and private files
+node_modules/
+ref/
+.research/
+dist/
+tests/
+test-results/
+.git-release/
+git-release/
+.env
+.env.*
+*.log
+Thumbs.db
+.DS_Store
