@@ -66,7 +66,7 @@ export function renderInjection(config) {
     };
     const prompt=(validateInjectionTemplate(config.injectionPrompt ?? '') || DEFAULT_INJECTION_PROMPT).replace(/\{\{(\w+)\}\}/g, (_, key) => values[key]);
     const contract='SceneBook is enabled for this reply. Required output: normal roleplay text + one complete illustration JSON comment in the final answer. EVERY enabled reply includes at least one usable scene; an empty scenes array is not valid.';
-    return `<image_generation>\n${contract}\n\n${prompt}\n\n${illustrationOutputRules(config)}\n</image_generation>`;
+    return `<image_generation>\nCRITICAL OUTPUT RULE:\n${contract}\n\n${prompt}\n\n${illustrationOutputRules(config)}\n</image_generation>`;
 }
 
 // Read our marker independently of how the model wraps JSON or breaks lines.
