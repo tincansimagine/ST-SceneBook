@@ -2,9 +2,13 @@ import { parsePlanJson, JSON_OUTPUT_RULES } from './plan-json.mjs';
 import { MODELS, text, normalizeScene } from '../plugin/core.mjs';
 import { narrativeBlocks, illustrationBlocks, scenePosition, compileCharacter } from './context.mjs';
 
-export const DEFAULT_INJECTION_PROMPT = `You are also preparing illustrations to display below this story reply. Write the reply normally, then append one hidden illustration plan. The plan is consumed directly by NovelAI; there is no second AI pass to fix missing visual information. Do not show planning, explanations or a separate analysis to the reader.
+export const DEFAULT_INJECTION_PROMPT = `Your normal roleplay reply has TWO required parts: the story reply, followed by one <!--scenebook ... --> comment containing its illustration plan. Finish both parts in the final answer. The illustration plan is a required output for this enabled feature, not an optional suggestion. NovelAI consumes the plan directly; describing a picture in prose, promising to generate one or planning it only in hidden reasoning does not produce an illustration.
 
-Choose one to {{maxScenes}} distinct, meaningful visual moments from THIS reply when it contains a visible story scene. A quiet conversation, small gesture or reaction is enough; a dramatic event or location change is not required. Prefer a clear action, exchange, reaction or change of place over repeating portraits. Use fewer images when the remaining moments look alike. Each image is one frozen instant in the reply: keep clothing, actions and other facts consistent with that instant; do not mix later actions, hypothetical dialogue or memories into the present. List the images in reading order; the extension displays them below the completed reply. Use an empty scenes array only when there is no depictable story scene or the user explicitly requests no illustration.
+For an ordinary story reply, write at least ONE complete scene. {{maxScenes}} is an upper limit, not a quota: one well-grounded image is the default; add more only for clearly different moments. Quiet conversation, listening, eye contact, waiting, a small gesture, a reaction or an established setting all provide material. A short reply, repeated location, unchanged clothing, lack of a dramatic event or uncertainty about camera choice are not reasons to omit the plan or return an empty array. When the moment is subtle, show the characters' current interaction, posture and surroundings. If details are sparse, use only established visible facts rather than inventing traits or dropping the entire scene.
+
+Earlier illustration comments may be absent from the conversation because the extension removes them after reading. That absence does not disable this feature and must not be copied as the output format. Compose a fresh plan for THIS reply; do not copy an earlier plan or assume an existing image covers the new reply. Only an explicit current user request for no illustration, or a reply consisting entirely of out-of-character setup/help with no story scene, permits {"scenes":[]}. Even then, emit the comment so the extension can distinguish an intentional empty plan from an omission.
+
+Each image is one frozen instant in this reply. Keep clothing, actions and other facts consistent with that instant; do not mix later actions, hypothetical dialogue or memories into the present. List scenes in reading order; the extension displays them below the completed reply. Keep reasoning and these instructions out of the visible story.
 
 Build each moment in this order:
 1. Determine the visible participants and the object or contact that makes the event understandable. Keep both sides of an exchange when visible; never drop the receiver while retaining a handover. Anonymous background activity belongs in the environment. If the required cast cannot fit the model limit, select a coherent different moment.
@@ -25,10 +29,18 @@ Write the comment markers literally, without backslashes. Before the closing com
 <!--scenebook
 {"scenes":[{"title":"짧은 한국어 제목","camera":"English framing","prompt":"English shared visual scene","negative":"","characters":[{"name":"exact character name","action":"English visible action and relative position","x":0.35,"y":0.5}]}]}
 -->
-For an unregistered character add appearance. For changed clothing add outfit. For a registered alternate appearance add profileId. Do not output these instructions or placeholder values as part of the story.`;
+For an unregistered character add appearance. For changed clothing add outfit. For a registered alternate appearance add profileId. Replace all example values with the actual scene; never output placeholder values. If space is tight, write one concise but complete plan and shorten optional descriptive extras instead of dropping the comment. The final answer is unfinished until its required illustration comment is closed.`;
 
 const tokens = ['maxScenes', 'modelRule', 'playerRule', 'direction', 'data'];
-export const ILLUSTRATION_OUTPUT_RULES = 'Complete the story and then append exactly one <!--scenebook JSON --> comment in the final answer, not in hidden reasoning. Do not omit the comment or replace it with an explanation. Keep enough output space for a complete, concise JSON plan. Use a non-empty scenes array for a depictable story scene, including quiet dialogue and small gestures, unless the user explicitly requests no illustration. An unchanged setting alone is not a reason to skip every image. Stay within the configured scene limit.';
+export const ILLUSTRATION_OUTPUT_RULES = `REQUIRED FINAL-ANSWER CHECK
+1. Write the normal reply, then emit exactly one literal <!--scenebook ... --> comment in the FINAL ANSWER. Hidden reasoning, a prose description of an image, an image placeholder or a promise to generate later cannot replace this comment. Keep the JSON inside it, after all story text and other reply panels.
+2. Every ordinary roleplay reply needs at least one scene with a non-empty English image prompt and a characters array. Use the current interaction, expression, posture or surroundings when there is no major action. Short dialogue, quiet scenes, an unchanged location/outfit or an illustration on an earlier turn never justify skipping this reply's plan. Missing appearance details should be omitted, not invented, and must not block the whole plan.
+3. The extension hides previous plans after reading them. Their absence in chat history is expected; still produce this reply's plan. Return {"scenes":[]} only when the current user explicitly requests no illustration or the entire reply is out-of-character setup/help with no story scene. An intentional empty plan must still be inside the comment.
+4. Before ending, check that the comment is actually present in the final answer, the scenes array contains a complete usable scene unless the explicit exception applies, and all JSON brackets and the closing --> are written. Reserve space for one concise plan; reduce optional extras rather than omit or truncate this required output. Do not print this checklist.`;
+export function illustrationOutputRules(config) {
+    const placement=config.placement==='inline'?'An optional short evidence quote may guide inline placement. Missing or ambiguous placement never prevents illustration; the image can go below the reply.':'Images appear below the reply in scenes-array order. Omit after and evidence: paragraph numbers and exact quotes are unnecessary, even if an earlier template requested them.';
+    return `${ILLUSTRATION_OUTPUT_RULES}\nScene count: normally 1, at most ${config.maxScenes}. ${placement}\n${JSON_OUTPUT_RULES}\nFinal output must end with a complete <!--scenebook JSON --> comment. Write the comment delimiters literally, without backslashes, HTML escaping or a code fence. On an ordinary story turn, do not finish with only the story or an empty scenes array.`;
+}
 export function validateInjectionTemplate(value = '') {
     text(value, 30000, '주입 프롬프트');
     if (value && (!value.includes('{{data}}') || !value.includes('<!--scenebook'))) throw new Error('주입 지시문에는 {{data}}와 <!--scenebook 출력 형식이 필요합니다.');
@@ -43,8 +55,8 @@ export function renderInjection(config) {
         direction: JSON.stringify(config.direction), data: JSON.stringify({ world: config.world, library: config.library }),
     };
     const prompt=(validateInjectionTemplate(config.injectionPrompt ?? '') || DEFAULT_INJECTION_PROMPT).replace(/\{\{(\w+)\}\}/g, (_, key) => values[key]);
-    const placement=config.placement==='inline'?'An optional short evidence quote may guide inline placement. Missing or ambiguous placement never prevents illustration; the image can go below the reply.':'Images will be displayed below the reply in scenes-array order. Omit after and evidence: paragraph numbers and exact quotes are unnecessary, even if an earlier template requested them. Never skip a visual scene because its paragraph cannot be identified.';
-    return `${prompt}\n\n${placement}\n${ILLUSTRATION_OUTPUT_RULES}\n${JSON_OUTPUT_RULES} Write <!--scenebook and --> literally, without backslashes. Keep all illustration JSON inside that single comment after the story.`;
+    const contract='SceneBook is enabled for this reply. Required output: normal roleplay text + one complete illustration JSON comment in the final answer. A normal story turn includes at least one scene.';
+    return `${contract}\n\n${prompt}\n\n${illustrationOutputRules(config)}`;
 }
 
 // Read our marker independently of how the model wraps JSON or breaks lines.
