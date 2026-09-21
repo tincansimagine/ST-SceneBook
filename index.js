@@ -320,7 +320,37 @@ function renderMessage(index) {
     }
 }
 function scheduleRender() {clearTimeout(renderTimer);renderTimer=setTimeout(()=>{document.querySelectorAll('#chat .mes[mesid]').forEach(n=>renderMessage(Number(n.getAttribute('mesid'))));},80);}
-function setIllustrationPrompt(value){const p=ILLUSTRATION_PROMPT;context().setExtensionPrompt?.(p.key,value,p.position,p.depth,false,p.role);}
+let activeIllustrationPrompt = '';
+function setIllustrationPrompt(value){activeIllustrationPrompt=value;const p=ILLUSTRATION_PROMPT;context().setExtensionPrompt?.(p.key,value,p.position,p.depth,false,p.role);}
+function finalizeIllustrationPrompt(data,dryRun){
+    if(dryRun||!activeIllustrationPrompt||!Array.isArray(data?.prompt))return;
+    const messages=data.prompt,prompt=activeIllustrationPrompt;
+    // Move only our exact registered text, including when ST combined System messages.
+    // Never add a second copy to unrelated quiet/analysis requests.
+    let found=false;
+    for(let i=messages.length-1;i>=0;i--){
+        const message=messages[i];
+        if(message.role!=='system')continue;
+        if(typeof message.content==='string'&&message.content.includes(prompt)){
+            message.content=message.content.split(prompt).join('');found=true;
+            if(!message.content.trim())messages.splice(i,1);
+        }else if(Array.isArray(message.content)){
+            for(let j=message.content.length-1;j>=0;j--){
+                const part=message.content[j];
+                if(part.type!=='text'||typeof part.text!=='string'||!part.text.includes(prompt))continue;
+                part.text=part.text.split(prompt).join('');found=true;
+                if(!part.text.trim())message.content.splice(j,1);
+            }
+            if(!message.content.length)messages.splice(i,1);
+        }
+    }
+    if(!found)return;
+    // Keep an assistant prefill/continuation at the end of the request.
+    let position=messages.length;
+    while(position>0&&messages[position-1].role==='assistant')position--;
+    messages.splice(position,0,{role:'system',content:prompt});
+    setWorkflowStatus('삽화 프롬프트 배치됨 · 프리셋 뒤 · 답변 시작문 앞');
+}
 function clearInjection(){setIllustrationPrompt('');}
 function injectPrompt(type,options,dryRun){
     if(dryRun)return;
@@ -446,6 +476,10 @@ function initialize() {
         if(c.eventSource.makeLast)c.eventSource.makeLast(c.eventTypes.GENERATION_AFTER_COMMANDS,restoreInjection);else c.eventSource.on(c.eventTypes.GENERATION_AFTER_COMMANDS,restoreInjection);
     }
     if(c.eventTypes.GENERATION_STOPPED)c.eventSource.on(c.eventTypes.GENERATION_STOPPED,()=>{automatic.stop();clearInjection();});
+    if(c.eventTypes.GENERATE_AFTER_DATA){
+        if(c.eventSource.makeLast)c.eventSource.makeLast(c.eventTypes.GENERATE_AFTER_DATA,finalizeIllustrationPrompt);
+        else c.eventSource.on(c.eventTypes.GENERATE_AFTER_DATA,finalizeIllustrationPrompt);
+    }
     if(c.SlashCommandParser&&c.SlashCommand)c.SlashCommandParser.addCommandObject(c.SlashCommand.fromProps({name:'scenebook',callback:()=>{studio(api);return '';},helpString:'씬북 설정을 엽니다.'}));
     scheduleRender();
 }
