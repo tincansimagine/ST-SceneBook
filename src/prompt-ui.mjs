@@ -10,7 +10,7 @@ export function promptEditor(config,onApply,{initial='image'}={}){
     image.append(style.wrap,negative.wrap,quality.wrap,el('p','ap2-muted','모든 장면의 공통값입니다. 장면·인물별 프롬프트는 장면 편집에서 수정합니다.'));
     const template=field('장면 분석 지시문',config.analysisPrompt||DEFAULT_ANALYSIS_PROMPT,{multiline:true,rows:17});
     analysis.append(template.wrap,el('p','ap2-muted','{{data}} 채팅·인물 · {{maxScenes}} 장면 수 · {{modelRule}} 모델별 작성법 · {{playerRule}} POV · {{direction}} 수정 지시. JSON 응답 형식을 유지하세요.'));
-    const injected=field('삽화 주입 프롬프트',config.injectionPrompt||DEFAULT_INJECTION_PROMPT,{multiline:true,rows:17});injection.append(el('p','ap2-muted','주입 위치: 깊이 0 · System. 일반 답변에서는 최신 대화 뒤에 배치합니다. ST의 프리셋·이어쓰기 지시와 API 후처리에 따라 최종 전송 순서는 달라질 수 있습니다.'),injected.wrap,el('p','ap2-muted','이 기본 프롬프트가 대화 AI에 전달됩니다. 직접 수정할 수 있으며 적용하면 바로 저장됩니다. <!--scenebook JSON 형식과 {{data}} 변수는 유지하세요.'));
+    const injected=field('삽화 주입 프롬프트',config.injectionPrompt||DEFAULT_INJECTION_PROMPT,{multiline:true,rows:17});injection.append(el('p','ap2-muted','주입 위치: 깊이 0 · System. 실제 전송 시 사용자 지시문과 출력 규칙 전체를 <image_generation> 태그로 감쌉니다. 일반 답변에서는 최신 대화 뒤에 배치하며 ST 프리셋·이어쓰기 지시와 API 후처리에 따라 최종 순서는 달라질 수 있습니다.'),injected.wrap,el('p','ap2-muted','이 기본 프롬프트가 대화 AI에 전달됩니다. 직접 수정할 수 있으며 적용하면 바로 저장됩니다. 바깥 태그는 확장이 자동으로 붙이므로 <!--scenebook JSON 형식과 {{data}} 변수만 유지하세요.'));
     for(const section of [analysis,injection]){
         const rules=el('details','ap2-guide-topic');rules.append(el('summary','','출력 규칙'),el('p','ap2-muted',section===injection?'주입이 켜져 있으면 일반 답변에 삽화 지시를 포함하도록 전송 시 덧붙입니다. 사용자 지시문도 유지되며, 명시적인 삽화 제외 요청은 존중합니다.':'분석 결과의 JSON 형식 오류를 줄이기 위해 전송 시 덧붙이는 규칙입니다. 저장한 지시문은 변경하지 않습니다.'),el('pre','ap2-code',section===injection?illustrationOutputRules(config):JSON_OUTPUT_RULES));section.append(rules);
     }

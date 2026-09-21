@@ -1,4 +1,4 @@
-export const CLIENT_VERSION='0.4.14';
+export const CLIENT_VERSION='0.4.15';
 export function validateHealth(value){
     const version=typeof value?.version==='string'?value.version:'알 수 없음';
     const match=version.match(/^(\d+)\.(\d+)\.(\d+)(?:$|[-+])/);
