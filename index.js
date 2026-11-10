@@ -13,6 +13,7 @@ import { renderInjection, validateInjectionTemplate, extractInjectedPlan, readSt
 import { WorkQueue } from './src/queue.mjs';
 import { downloadChat } from './src/export.mjs';
 import { mergeRevision } from './src/revision.mjs';
+import { adoptEditedView } from './src/edited-view.mjs';
 import { timelineInstruction,validateTimeline,resolveAt } from './src/timeline.mjs';
 import { el, button, notice, studio, composer, inspect, viewer, modal, mountSettings, compareVersions, confirmAction } from './src/ui.mjs';
 
@@ -455,7 +456,7 @@ function initialize() {
     const c=context();if(initializeSettings(c.extensionSettings))c.saveSettingsDebounced();
     const container=document.getElementById('extensions_settings2')??document.getElementById('extensions_settings');
     if(container&&!document.getElementById('ap2-settings'))mountSettings(api,container);
-    for(const name of ['CHARACTER_MESSAGE_RENDERED','MESSAGE_UPDATED','MESSAGE_SWIPED','MESSAGE_DELETED','CHAT_CHANGED'])if(c.eventTypes[name])c.eventSource.on(c.eventTypes[name],()=>{if(name==='CHAT_CHANGED'){automatic.reset();receivedCount=0;clearInjection();queue.cancelWaiting();setWorkflowStatus('');document.dispatchEvent(new Event('scenebook-context-changed'));}scheduleRender();});
+    for(const name of ['CHARACTER_MESSAGE_RENDERED','MESSAGE_EDITED','MESSAGE_UPDATED','MESSAGE_SWIPED','MESSAGE_DELETED','CHAT_CHANGED'])if(c.eventTypes[name])c.eventSource.on(c.eventTypes[name],()=>{if(name==='CHAT_CHANGED'){automatic.reset();receivedCount=0;clearInjection();queue.cancelWaiting();setWorkflowStatus('');document.dispatchEvent(new Event('scenebook-context-changed'));}scheduleRender();});
     if(c.eventTypes.CHARACTER_RENAMED)c.eventSource.on(c.eventTypes.CHARACTER_RENAMED,(oldAvatar,newAvatar)=>{
         const saved={...characterVisuals(context())};if(!Object.hasOwn(saved,oldAvatar)||typeof newAvatar!=='string'||!newAvatar)return;
         saved[newAvatar]=saved[oldAvatar];if(oldAvatar!==newAvatar)delete saved[oldAvatar];saveSettings({...settings(),characterVisuals:saved});
@@ -464,6 +465,16 @@ function initialize() {
         const key=event?.character?.avatar,saved={...characterVisuals(context())};if(!key||!Object.hasOwn(saved,key))return;
         delete saved[key];saveSettings({...settings(),characterVisuals:saved});
     });
+    // Registered first so the moved illustrations are part of the save and render that follow an edit.
+    if(c.eventTypes.MESSAGE_EDITED){
+        const edited=index=>{
+            const ctx=context(),message=ctx.chat[Number(index)];
+            if(!message||message.is_user||message.is_system||!adoptEditedView(message.extra?.[KEY],message,settings().placement))return;
+            const swipe=message.swipe_info?.[message.swipe_id??0];if(swipe)swipe.extra=structuredClone(message.extra);
+            ctx.saveChatDebounced?.();scheduleRender();
+        };
+        if(c.eventSource.makeFirst)c.eventSource.makeFirst(c.eventTypes.MESSAGE_EDITED,edited);else c.eventSource.on(c.eventTypes.MESSAGE_EDITED,edited);
+    }
     const receive=(index,type)=>automatic.receive(index,type),finalize=(index,type)=>automatic.receive(index,type,true);
     // Capture the hidden plan before other extensions modify the reply, then
     // observe the finalized body after their render handlers have completed.
