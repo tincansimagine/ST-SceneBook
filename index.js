@@ -17,6 +17,7 @@ import { mergeRevision } from './src/revision.mjs';
 import { adoptEditedView } from './src/edited-view.mjs';
 import { orientation, sizeFor, LOOKS, withLook } from './src/framing.mjs';
 import { applyFrame, validFrame } from './src/frames-ui.mjs';
+import { INKS } from './src/ornaments.mjs';
 import { readFrameImage, safeFramePath } from './src/frame-import.mjs';
 import { quickEdit } from './src/quick-edit.mjs';
 import { timelineInstruction,validateTimeline,resolveAt } from './src/timeline.mjs';
@@ -52,6 +53,7 @@ function cleanSettings(value) {
         return{id:text(f.id,60),name:text(f.name,60)||'액자',url:f.url,width:number(f.width,16,8192,'액자 너비',true),height:number(f.height,16,8192,'액자 높이',true),window,mask:f.mask};
     });
     if(!LOOKS.some(([id])=>id===c.look))c.look='';
+    if(!INKS.some(([ink])=>ink===c.frameInk))c.frameInk='';
     if(!validFrame(c.frame,c.customFrames))c.frame='soft';
     if(c.frameWide&&!validFrame(c.frameWide,c.customFrames))c.frameWide='';
     if(!['pov','visible','auto'].includes(c.playerMode)||!['inline','end'].includes(c.placement))throw new Error('표시 설정을 확인하세요.');
@@ -104,7 +106,7 @@ async function resetVisual(where,expectedScope){
     }else throw new Error('해제할 범위를 확인하세요.');
     document.dispatchEvent(new CustomEvent('scenebook-visual-changed',{detail:{scope:where,contextKey:expectedScope}}));
 }
-function saveSettings(value) { const previous=settings();preserveSettings(context().extensionSettings,cleanSettings(value));context().saveSettingsDebounced();const current=settings();if(!workflowEnabled(current)){clearInjection();automatic.stop();queue.cancelWaiting(item=>item.automatic);}if(['compact','displayWidth','placement','frame','frameWide'].some(k=>previous[k]!==current[k])||previous.customFrames?.length!==current.customFrames?.length)scheduleRender();document.dispatchEvent(new Event('scenebook-settings-changed')); }
+function saveSettings(value) { const previous=settings();preserveSettings(context().extensionSettings,cleanSettings(value));context().saveSettingsDebounced();const current=settings();if(!workflowEnabled(current)){clearInjection();automatic.stop();queue.cancelWaiting(item=>item.automatic);}if(['compact','displayWidth','placement','frame','frameWide','frameInk'].some(k=>previous[k]!==current[k])||previous.customFrames?.length!==current.customFrames?.length)scheduleRender();document.dispatchEvent(new Event('scenebook-settings-changed')); }
 async function request(route, body, signal) {
     const response=await fetch(`/api/plugins/autopic2/${route}`,{method:body?'POST':'GET',headers:context().getRequestHeaders(),signal,...(body?{body:JSON.stringify(body)}:{})});
     if(route==='vertex'&&response.status===404)throw new Error('씬북 서버 플러그인을 0.4.2 이상으로 업데이트하고 SillyTavern을 재시작하세요.');
@@ -320,7 +322,7 @@ function renderMessage(index) {
         open.addEventListener('click',run);open.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();void run();}});menu.prepend(open);
     }
     const state=m.extra?.[KEY]?.views?.[sourceKey(m.mes,m.swipe_id??0)],config=settings();
-    const signature=JSON.stringify([index,m.mes,m.swipe_id,state,config.compact,config.displayWidth,config.placement,config.frame,config.frameWide,config.customFrames?.length]);
+    const signature=JSON.stringify([index,m.mes,m.swipe_id,state,config.compact,config.displayWidth,config.placement,config.frame,config.frameWide,config.frameInk,config.customFrames?.length]);
     const previous=rendered.get(content);
     if(previous?.signature===signature&&previous.nodes.every(n=>n.isConnected))return;
     block.querySelectorAll('.ap2-tools,.ap2-figure').forEach(x=>x.remove());

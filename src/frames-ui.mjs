@@ -1,5 +1,5 @@
 import { FRAMES } from './framing.mjs';
-import { ORNAMENTS, ORNAMENT_PAD, ornamentSvg } from './ornaments.mjs';
+import { ORNAMENTS, INKS, ORNAMENT_PAD, ornamentSvg } from './ornaments.mjs';
 import { safeFramePath } from './frame-import.mjs';
 
 export const validFrame=(id,custom=[])=>FRAMES.some(([x])=>x===id)||ORNAMENTS.some(([x])=>`art:${x}`===id)||custom.some(f=>`image:${f.id}`===id);
@@ -8,7 +8,7 @@ export function applyFrame(figure,wrap,picture,width,height,config){
     let id=config.frame;const custom=config.customFrames??[];
     if(width>height&&config.frameWide&&validFrame(config.frameWide,custom))id=config.frameWide;
     if(id.startsWith('art:')){
-        figure.dataset.frame='art';wrap.style.padding=`${ORNAMENT_PAD*100}%`;wrap.insertAdjacentHTML('beforeend',ornamentSvg(id.slice(4),width,height));return;
+        figure.dataset.frame='art';wrap.style.padding=`${ORNAMENT_PAD*100}%`;if(INKS.some(([ink])=>ink&&ink===config.frameInk))wrap.style.setProperty('--ap2-ink',config.frameInk);wrap.insertAdjacentHTML('beforeend',ornamentSvg(id.slice(4),width,height));return;
     }
     const frame=id.startsWith('image:')&&custom.find(f=>f.id===id.slice(6));
     if(frame&&safeFramePath(frame.url)){

@@ -383,7 +383,7 @@ details.ap2-group[open] > summary { border-bottom-left-radius: 0; border-bottom-
 .ap2-figure[data-frame=line] .ap2-image-wrap { padding: calc(7px * var(--u)); border: 1px solid color-mix(in srgb, var(--ap2-fg) 55%, transparent); border-radius: 0; box-shadow: none; }
 /* Drawn frames: the ornament sits over the picture and spills outside it. */
 .ap2-figure[data-frame=art] .ap2-image-wrap, .ap2-figure[data-frame=image] .ap2-image-wrap { overflow: visible; border-radius: 0; box-shadow: none; }
-.ap2-ornament { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; pointer-events: none; }
+.ap2-ornament { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; pointer-events: none; color: var(--ap2-ink, var(--ap2-fg)); }
 /* Image frames: the picture fills the frame's opening, the artwork lies on top. */
 .ap2-figure[data-frame=image] .ap2-image-open { -webkit-mask-size: 100% 100%; mask-size: 100% 100%; -webkit-mask-repeat: no-repeat; mask-repeat: no-repeat; }
 .ap2-figure[data-frame=image] .ap2-image-open > :is(img, .ap2-frame-sample) { width: 100%; height: 100%; object-fit: cover; aspect-ratio: auto; }

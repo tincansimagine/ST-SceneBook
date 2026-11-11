@@ -8,6 +8,7 @@ import { notice,placeNotices } from './notifications.mjs';
 import { workflowEnabled } from './automatic.mjs';
 import { applyFrame, frameChoices } from './frames-ui.mjs';
 import { LOOKS } from './framing.mjs';
+import { INKS } from './ornaments.mjs';
 export { notice } from './notifications.mjs';
 export { composer } from './editor.mjs';
 
@@ -160,7 +161,7 @@ export function studio(api,host=null) {
             const counts=el('div','ap2-grid');analysis.append(counts);
             addField(counts,fields,'contextMessages','이전 메시지',c.contextMessages,{type:'number',min:0,max:30,step:1});
             analysis.append(button('분석',()=>api.analyze(),false,'fa-wand-magic-sparkles'),el('p','ap2-muted','삽화 지시가 없는 답변을 따로 분석합니다. 별도 AI 요청이 발생합니다.'));
-            addField(image,fields,'look','그림체',c.look,{choices:LOOKS.map(([id,label])=>[id,label]),help:'고른 그림체의 태그를 메인 프롬프트 앞에 붙입니다.'});
+            addField(image,fields,'look','그림체',c.look,{choices:LOOKS.map(([id,label])=>[id,label]),help:'선택 사항입니다. 고르면 그 그림체의 태그를 메인 프롬프트 앞에 붙입니다.'});
             const prompts=settingGroup(page,'프롬프트',true);
             addField(prompts,fields,'style','메인 프롬프트',c.style,{multiline:true});
             addField(prompts,fields,'negative','UC 프롬프트',c.negative,{multiline:true,rows:2});
@@ -192,12 +193,13 @@ export function studio(api,host=null) {
             for(const item of frameChoices(c)){
                 const choice=el('button','ap2-frame-choice');choice.type='button';choice.setAttribute('role','radio');choice.setAttribute('aria-checked',String(item.id===frame));choice.title=item.label;
                 const sample=el('span','ap2-figure'),wrap=el('span','ap2-image-wrap'),inner=el('span','ap2-image-open');inner.append(el('span','ap2-frame-sample'));wrap.append(inner);sample.append(wrap);
-                applyFrame(sample,wrap,inner,4,5,{frame:item.id,customFrames:c.customFrames});choice.append(sample,el('span','ap2-frame-name',item.label));
+                applyFrame(sample,wrap,inner,4,5,{frame:item.id,customFrames:c.customFrames,frameInk:c.frameInk});choice.append(sample,el('span','ap2-frame-name',item.label));
                 choice.addEventListener('click',()=>{frame=item.id;for(const b of frames.children)b.setAttribute('aria-checked',String(b===choice));page.dispatchEvent(new Event('input'));});frames.append(choice);
             }
             fields.frame={read:()=>frame};fields.frameWide={read:()=>frameWide};
             const frameFile=el('input');frameFile.type='file';frameFile.accept='image/png,image/webp';frameFile.hidden=true;
             frameFile.addEventListener('change',async()=>{try{const file=frameFile.files?.[0];if(!file)return;await api.addFrame(file);notice('액자 그림을 추가했습니다.');}catch(e){notice(e.message,true);}finally{frameFile.value='';}});
+            addField(display,fields,'frameInk','장식 액자 색',c.frameInk,{choices:INKS});
             const frameTools=el('div','ap2-actions');frameTools.append(frameFile,button('액자 그림 추가',()=>frameFile.click(),false,'fa-plus'));
             if(c.customFrames?.length){
                 frameTools.append(actionMenu(c.customFrames.map(f=>({label:`“${f.name}” 삭제`,icon:'fa-trash-can',run:async()=>{if(await confirmAction('액자 삭제',`“${f.name}” 액자 그림을 삭제할까요?`))await api.removeFrame(f.id);}})),'액자 그림 관리'));
@@ -410,7 +412,7 @@ export function compareVersions(versions,currentIndex){
 export function mountSettings(api,container){
     const drawer=el('div','inline-drawer');drawer.id='ap2-settings';
     const header=el('div','inline-drawer-toggle inline-drawer-header');header.tabIndex=0;header.setAttribute('role','button');header.setAttribute('aria-expanded','false');header.setAttribute('aria-controls','ap2-settings-content');
-    const label=el('b','ap2-drawer-title','씬북'),version=el('small','ap2-version','0.4.26'),status=el('small','ap2-muted','');status.id='ap2-status';label.append(version);
+    const label=el('b','ap2-drawer-title','씬북'),version=el('small','ap2-version','0.4.27'),status=el('small','ap2-muted','');status.id='ap2-status';label.append(version);
     const icon=el('div','inline-drawer-icon fa-solid fa-circle-chevron-down down');icon.setAttribute('aria-hidden','true');header.append(label,status,icon);
     const content=el('div','inline-drawer-content ap2-settings');content.id='ap2-settings-content';content.style.display='none';
     drawer.append(header,content);container.append(drawer);
