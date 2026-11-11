@@ -7,6 +7,7 @@ import { promptEditor } from './prompt-ui.mjs';
 import { notice,placeNotices } from './notifications.mjs';
 import { workflowEnabled } from './automatic.mjs';
 import { applyFrame, frameChoices } from './frames-ui.mjs';
+import { LOOKS } from './framing.mjs';
 export { notice } from './notifications.mjs';
 export { composer } from './editor.mjs';
 
@@ -159,6 +160,7 @@ export function studio(api,host=null) {
             const counts=el('div','ap2-grid');analysis.append(counts);
             addField(counts,fields,'contextMessages','이전 메시지',c.contextMessages,{type:'number',min:0,max:30,step:1});
             analysis.append(button('분석',()=>api.analyze(),false,'fa-wand-magic-sparkles'),el('p','ap2-muted','삽화 지시가 없는 답변을 따로 분석합니다. 별도 AI 요청이 발생합니다.'));
+            addField(image,fields,'look','그림체',c.look,{choices:LOOKS.map(([id,label])=>[id,label]),help:'고른 그림체의 태그를 메인 프롬프트 앞에 붙입니다.'});
             const prompts=settingGroup(page,'프롬프트',true);
             addField(prompts,fields,'style','메인 프롬프트',c.style,{multiline:true});
             addField(prompts,fields,'negative','UC 프롬프트',c.negative,{multiline:true,rows:2});
@@ -312,6 +314,7 @@ export function studio(api,host=null) {
             const usage=async()=>{const account=await api.account(),{dialog:d,body}=modal('계정 사용량');d.classList.add('ap2-compact');body.append(el('p','',`구독 ${account.active?'활성':'비활성'} · 등급 ${account.tier??'확인 불가'}`));body.append(el('p','',`잔여 Anlas ${account.trainingStepsLeft?Number(account.trainingStepsLeft.fixedTrainingStepsLeft??0)+Number(account.trainingStepsLeft.purchasedTrainingSteps??0):'확인 불가'}`));};
             const waiting=api.queue().filter(item=>item.state==='waiting').length,cancel=button('대기 취소',()=>{api.cancelQueue();return open('queue');},false,'fa-ban');cancel.disabled=!waiting;
             const actions=el('div','ap2-actions');actions.append(button(api.queuePaused()?'재개':'일시정지',()=>{api.toggleQueue();return open('queue');},false,api.queuePaused()?'fa-play':'fa-pause'),cancel,actionMenu([{label:'지시 기록',icon:'fa-file-lines',run:()=>api.showPlans()},{label:'계정 사용량',icon:'fa-coins',run:usage},{label:'새로고침',icon:'fa-rotate-right',run:()=>open('queue')}]));page.append(actions);
+            const drafts=api.pendingDrafts().length;if(drafts)actions.prepend(button(`초안 ${drafts}개 생성`,async()=>{if(!await confirmAction('초안 일괄 생성',`그림이 없는 답변 ${drafts}개의 초안을 모두 생성 대기열에 넣을까요?`,'생성'))return;notice(`${await api.generateDrafts()}개 장면을 대기열에 넣었습니다.`);return open('queue');},true,'fa-images'));
             page.append(el('p','ap2-muted',`이번 접속 이미지 요청 ${api.usage()} / ${api.settings().sessionLimit}회${api.queuePaused()?' · 일시정지됨':''}`));
             if(!api.queue().length)page.append(el('p','ap2-empty','진행 중인 작업이 없습니다.'));
             const states={waiting:'대기 중',running:'생성 중',done:'완료',failed:'실패',cancelled:'취소됨'};
@@ -407,7 +410,7 @@ export function compareVersions(versions,currentIndex){
 export function mountSettings(api,container){
     const drawer=el('div','inline-drawer');drawer.id='ap2-settings';
     const header=el('div','inline-drawer-toggle inline-drawer-header');header.tabIndex=0;header.setAttribute('role','button');header.setAttribute('aria-expanded','false');header.setAttribute('aria-controls','ap2-settings-content');
-    const label=el('b','ap2-drawer-title','씬북'),version=el('small','ap2-version','0.4.25'),status=el('small','ap2-muted','');status.id='ap2-status';label.append(version);
+    const label=el('b','ap2-drawer-title','씬북'),version=el('small','ap2-version','0.4.26'),status=el('small','ap2-muted','');status.id='ap2-status';label.append(version);
     const icon=el('div','inline-drawer-icon fa-solid fa-circle-chevron-down down');icon.setAttribute('aria-hidden','true');header.append(label,status,icon);
     const content=el('div','inline-drawer-content ap2-settings');content.id='ap2-settings-content';content.style.display='none';
     drawer.append(header,content);container.append(drawer);

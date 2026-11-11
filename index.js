@@ -15,7 +15,7 @@ import { WorkQueue } from './src/queue.mjs';
 import { downloadChat } from './src/export.mjs';
 import { mergeRevision } from './src/revision.mjs';
 import { adoptEditedView } from './src/edited-view.mjs';
-import { orientation, sizeFor } from './src/framing.mjs';
+import { orientation, sizeFor, LOOKS, withLook } from './src/framing.mjs';
 import { applyFrame, validFrame } from './src/frames-ui.mjs';
 import { readFrameImage, safeFramePath } from './src/frame-import.mjs';
 import { quickEdit } from './src/quick-edit.mjs';
@@ -51,6 +51,7 @@ function cleanSettings(value) {
         if(!window||!safeFramePath(f.url)||typeof f.mask!=='string'||!f.mask.startsWith('data:image/png;base64,')||f.mask.length>200000)throw new Error('액자 그림 정보를 확인하세요.');
         return{id:text(f.id,60),name:text(f.name,60)||'액자',url:f.url,width:number(f.width,16,8192,'액자 너비',true),height:number(f.height,16,8192,'액자 높이',true),window,mask:f.mask};
     });
+    if(!LOOKS.some(([id])=>id===c.look))c.look='';
     if(!validFrame(c.frame,c.customFrames))c.frame='soft';
     if(c.frameWide&&!validFrame(c.frameWide,c.customFrames))c.frameWide='';
     if(!['pov','visible','auto'].includes(c.playerMode)||!['inline','end'].includes(c.placement))throw new Error('표시 설정을 확인하세요.');
@@ -228,7 +229,8 @@ async function enqueue(target,scenes,slotId=null,overrideConfig=null) {
         const key=`${target.scope}:${target.id}:${target.key}:${slotId??`scene-${position}`}`;
         // The plan may ask for a portrait, landscape or square canvas for this scene.
         const shape=!overrideConfig&&settings().autoSize?orientation(scenes[position].size):'';
-        const frozen={...generationConfig(c),...(shape?sizeFor(c,shape):{})},id=crypto.randomUUID();
+        // A regeneration keeps the look already recorded with that picture.
+        const frozen={...generationConfig(overrideConfig?c:withLook(c,settings().look)),...(shape?sizeFor(c,shape):{})},id=crypto.randomUUID();
         const added=queue.add(key,async()=>{
             let progress;
             try{
@@ -478,6 +480,13 @@ const api={settings,saveSettings,visualSettings,hasVisualOverride:where=>hasVisu
         saveSettings({...currentValue,references:currentValue.references.filter(ref=>ref.id!==id),presets:currentValue.presets.map(preset=>({...preset,config:{...preset.config,references:(preset.config.references??[]).filter(ref=>ref.id!==id)}}))});
     },
     importScene:async(scene,config)=>{const target=capture();return compose(target.index,true,[{...scene,after:target.snapshot.blocks.at(-1).index,evidence:''}],null,generationConfig(config));},
+    // Replies that have a saved draft but no picture yet.
+    pendingDrafts:()=>context().chat.map((message,index)=>({message,index,state:message.extra?.[KEY]?.views?.[sourceKey(message.mes,message.swipe_id??0)]})).filter(r=>!r.message.is_user&&!r.message.is_system&&r.state?.source===r.message.mes&&r.state.draft?.length&&!(r.state.slots??[]).some(s=>!s.deleted)).map(r=>r.index),
+    generateDrafts:async()=>{
+        let count=0;
+        for(const index of api.pendingDrafts()){const target=capture(index),state=viewState(target,false);if(!state?.draft?.length)continue;if(state.draftConfig)target.config={...target.config,...generationConfig(validateConfig({...target.config,...state.draftConfig}))};await enqueue(target,state.draft);count+=state.draft.length;}
+        return count;
+    },
     addFrame:async file=>{
         const frame=await readFrameImage(file),id=crypto.randomUUID();
         const response=await fetch('/api/images/upload',{method:'POST',headers:context().getRequestHeaders(),body:JSON.stringify({image:frame.data,format:frame.format,ch_name:'scenebook-frames',filename:id})});

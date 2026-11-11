@@ -28,4 +28,25 @@ export function toggleCameraTag(camera,tag){
     const kept=tags(camera).filter(x=>!siblings.includes(x.toLowerCase()));
     return(on?kept:[tag,...kept]).join(', ');
 }
+// Built-in looks. Tags are generic medium and rendering terms, added in front
+// of the user's own main prompt.
+export const LOOKS=[
+    ['','사용 안 함','',''],
+    ['semi','반실사','semi-realistic, detailed skin, soft shading, depth of field','flat color, chibi'],
+    ['cinema','시네마틱','cinematic lighting, dramatic shadows, depth of field, film grain, wide aspect composition','flat color, simple background'],
+    ['watercolor','수채화','watercolor (medium), traditional media, soft edges, paper texture, pastel colors','3d, photorealistic'],
+    ['manga','흑백 만화','monochrome, greyscale, manga, screentone, ink lines, high contrast','color, 3d'],
+    ['webtoon','웹툰','flat color, clean lineart, thick outlines, cel shading, vivid colors','sketch, painterly'],
+    ['retro','레트로 애니','retro artstyle, 1990s (style), anime screenshot, cel shading, film grain','3d, photorealistic'],
+    ['sketch','연필 스케치','sketch, graphite (medium), traditional media, rough lines, unfinished, monochrome','3d, color'],
+    ['pixel','도트','pixel art, limited palette, dithering, low resolution look','blurry, 3d, photorealistic'],
+    ['chibi','치비','chibi, super deformed, big head, small body, cute, simple shading','realistic, tall'],
+    ['oil','유화','oil painting (medium), impasto, visible brushstrokes, rich colors, classical lighting','flat color, lineart'],
+    ['pastel','파스텔 동화','soft pastel colors, storybook illustration, gentle lighting, rounded shapes, dreamy','dark, high contrast'],
+];
+export function withLook(config,id){
+    const look=LOOKS.find(x=>x[0]===id);if(!look||!look[0])return config;
+    const join=(a,b)=>[a,b].map(x=>String(x??'').trim()).filter(Boolean).join(', ');
+    return{...config,style:join(look[2],config.style),negative:join(config.negative,look[3])};
+}
 export const FRAMES=[['soft','기본'],['none','없음'],['line','라인']];
