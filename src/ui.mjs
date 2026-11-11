@@ -47,11 +47,11 @@ export function actionMenu(actions,label='더 보기') {
 export function modal(title, subtitle = '') {
     const previous = document.activeElement;
     const dialog = el('dialog', 'ap2-dialog');
-    const header = el('header', 'ap2-header'), titleBox = el('div');
+    const header = el('header', 'ap2-header'), titleBox = el('div','ap2-header-title');
     const heading=el('h2','',title);heading.id=`ap2-title-${crypto.randomUUID()}`;dialog.setAttribute('aria-labelledby',heading.id);
     titleBox.append(heading);
     if (subtitle) titleBox.append(el('p', 'ap2-muted', subtitle));
-    header.append(titleBox, button('닫기', () => dialog.close()));
+    const close=iconButton('닫기','fa-xmark',()=>dialog.close());close.classList.add('ap2-close');header.append(titleBox, close);
     const body = el('div', 'ap2-body'); dialog.append(header, body); document.body.append(dialog);
     dialog.addEventListener('close', () => { placeNotices(); dialog.remove(); previous?.focus(); });
     for(const event of ['mousedown','pointerdown','click'])dialog.addEventListener(event,e=>e.stopPropagation());
@@ -79,8 +79,16 @@ export function addField(parent, map, key, label, value, options) {
     const f = field(label, value, options);if(HELP[key]){f.input.title=HELP[key];f.wrap.title=HELP[key];}map[key] = f; parent.append(f.wrap); return f.input;
 }
 export function readFields(map) { return Object.fromEntries(Object.entries(map).map(([key, f]) => [key, f.read()])); }
+// A small set of mutually exclusive choices, shown side by side.
+export function segmented(label,choices,value,onChange=()=>{}){
+    const wrap=el('div','ap2-segmented');wrap.setAttribute('role','radiogroup');wrap.setAttribute('aria-label',label);
+    const set=next=>{value=next;for(const b of wrap.children){const on=b.dataset.value===next;b.setAttribute('aria-checked',String(on));b.tabIndex=on?0:-1;}};
+    for(const [id,caption]of choices){const b=el('button','ap2-segment',caption);b.type='button';b.dataset.value=id;b.setAttribute('role','radio');b.addEventListener('click',()=>{if(value===id)return;set(id);onChange(id);});wrap.append(b);}
+    wrap.addEventListener('keydown',event=>{if(!['ArrowLeft','ArrowRight'].includes(event.key))return;event.preventDefault();const items=[...wrap.children],next=items[(items.findIndex(b=>b.dataset.value===value)+(event.key==='ArrowRight'?1:-1)+items.length)%items.length];next.focus();next.click();});
+    set(value);return{wrap,set,read:()=>value,disable(off){for(const b of wrap.children)b.disabled=off;}};
+}
 export function confirmAction(title,message,confirmLabel='삭제'){
-    return new Promise(resolve=>{const {dialog,body}=modal(title);body.append(el('p','',message));const footer=el('footer','ap2-footer');footer.append(button('취소',()=>dialog.close()),button(confirmLabel,()=>{dialog.returnValue='confirm';dialog.close();},true));dialog.append(footer);dialog.addEventListener('close',()=>resolve(dialog.returnValue==='confirm'),{once:true});footer.querySelector('button').focus();});
+    return new Promise(resolve=>{const {dialog,body}=modal(title);dialog.classList.add('ap2-compact');body.append(el('p','',message));const footer=el('footer','ap2-footer');footer.append(button('취소',()=>dialog.close()),button(confirmLabel,()=>{dialog.returnValue='confirm';dialog.close();},true));dialog.append(footer);dialog.addEventListener('close',()=>resolve(dialog.returnValue==='confirm'),{once:true});footer.querySelector('button').focus();});
 }
 function settingGroup(parent,title,collapsed=false){
     const group=el(collapsed?'details':'fieldset','ap2-group');
@@ -90,11 +98,11 @@ function settingGroup(parent,title,collapsed=false){
 function saveBar(page,save){
     const row=el('div','ap2-savebar'),state=el('span','ap2-muted','');
     let revision=0;
-    const commit=async()=>{const version=++revision;page.dataset.dirty='true';try{await save();if(version===revision){page.dataset.dirty='false';state.textContent='자동 저장';}}catch(e){if(version===revision)state.textContent=`저장 안 됨 · ${e.message}`;}};
+    const commit=async()=>{const version=++revision;page.dataset.dirty='true';try{await save();if(version===revision){page.dataset.dirty='false';state.textContent='저장됨';row.dataset.state='saved';}}catch(e){if(version===revision){state.textContent=`저장 안 됨 · ${e.message}`;row.dataset.state='error';}}};
     // Commit values to ST's settings on every edit. ST batches disk writes; a
     // closed drawer, tab switch or extension update cannot discard form-only edits.
     page.addEventListener('input',commit);page.addEventListener('change',commit);
-    state.textContent='자동 저장';row.append(state,button('저장',commit,false,'fa-floppy-disk'));page.append(row);
+    state.textContent='변경하면 자동으로 저장됩니다';state.setAttribute('role','status');row.append(state);page.append(row);
 }
 function installationHelp(){
     const {body}=modal('연결 안내');
@@ -111,13 +119,12 @@ export function studio(api,host=null) {
     const connection=el('div','ap2-connection'),connectionText=el('span','ap2-connection-label','연결 확인 중');
     const help=button('설치 안내',()=>installationHelp(),false,'fa-circle-info');help.hidden=true;
     const check=async()=>{connectionText.textContent='연결 확인 중';try{const h=await api.health(true);connectionText.textContent=`서버 ${h.version} · ${h.hasKey?'연결됨':'NovelAI 키 미설정'}`;connection.dataset.state=h.hasKey?'ready':'warning';help.hidden=h.hasKey;}catch(e){connectionText.textContent=e.message;connection.dataset.state='warning';help.hidden=false;}};
-    connection.append(connectionText,help,button('확인',check,false,'fa-rotate-right'),button('사용법',showGuide,false,'fa-circle-question'));
-    const quick=el('div','ap2-quick');quick.append(button('장면 편집',async()=>{dialog.close();await api.compose();},false,'fa-pen'),button('이미지 읽기',()=>imageImport(api,()=>open('generation',true)),false,'fa-file-image'));
-    const workflow=el('section','ap2-workflow'),mode=field('처리 방식',api.settings().automatic,{choices:[['generate','자동 생성'],['review','초안만']]}),injection=field('프롬프트 주입',workflowEnabled(api.settings()),{type:'checkbox'}),flowHelp=el('p','ap2-muted'),flowStatus=el('p','ap2-muted ap2-workflow-status');flowStatus.setAttribute('role','status');
+    connection.append(connectionText,help,iconButton('연결 다시 확인','fa-rotate-right',check),button('사용법',showGuide,false,'fa-circle-question'));
+    const quick=el('div','ap2-quick');quick.append(button('장면 편집',async()=>{dialog.close();await api.compose();},true,'fa-pen'),button('이미지 읽기',()=>imageImport(api,()=>open('generation',true)),false,'fa-file-image'));
+    const workflow=el('section','ap2-workflow'),mode=segmented('처리 방식',[['generate','자동 생성'],['review','초안만']],api.settings().automatic==='review'?'review':'generate',value=>{api.saveSettings({...api.settings(),automatic:value});refreshWorkflow();}),injection=field('프롬프트 주입',workflowEnabled(api.settings()),{type:'checkbox'}),flowHelp=el('small','ap2-muted'),flowRow=el('div','ap2-workflow-row'),flowStatus=el('p','ap2-workflow-status');flowStatus.setAttribute('role','status');injection.wrap.classList.add('ap2-workflow-toggle');injection.wrap.append(flowHelp);
     const editInjection=button('프롬프트',()=>promptEditor(api.settings(),value=>api.saveSettings({...api.settings(),...value}),{initial:'injection'}),false,'fa-pen');editInjection.title='기본 삽화 프롬프트 보기·수정';
-    workflow.append(injection.wrap,editInjection,mode.wrap,flowHelp,flowStatus);
-    const refreshWorkflow=()=>{const c=api.settings();mode.input.value=c.automatic==='off'?'generate':c.automatic;injection.input.checked=workflowEnabled(c);mode.input.disabled=!workflowEnabled(c);flowHelp.textContent=workflowEnabled(c)?'주입: 채팅 완성은 프리셋 뒤 · 답변 시작문 앞 → '+(c.automatic==='review'?'초안만 저장':`이미지 생성 · ${c.every===1?'매 답변':`${c.every}개 답변마다`}`):'꺼짐 · 삽화 프롬프트 주입과 자동 처리를 모두 멈춥니다.';flowStatus.textContent=api.status?.()||'설정은 자동 저장됩니다.';};
-    mode.input.addEventListener('change',()=>{api.saveSettings({...api.settings(),automatic:mode.read()});refreshWorkflow();});
+    flowRow.append(mode.wrap,editInjection);workflow.append(injection.wrap,flowRow,flowStatus);
+    const refreshWorkflow=()=>{const c=api.settings(),on=workflowEnabled(c),every=c.every===1?'답변마다':`답변 ${c.every}개마다`;mode.set(c.automatic==='review'?'review':'generate');injection.input.checked=on;flowRow.hidden=!on;flowHelp.textContent=!on?'꺼짐 · 삽화 지시를 넣지 않고 자동 처리도 멈춥니다.':c.automatic==='review'?'AI 답변에 삽화 지시를 받아 초안으로 저장합니다. 장면 편집에서 확인한 뒤 생성하세요.':`AI 답변에 삽화 지시를 받아 ${every} 이미지를 자동으로 만듭니다.`;const status=api.status?.()||'';flowStatus.textContent=status;flowStatus.hidden=!status;};
     injection.input.addEventListener('change',()=>{const c=api.settings(),enabled=injection.read();api.saveSettings({...c,promptInjection:enabled,automatic:enabled&&c.automatic==='off'?'generate':c.automatic});refreshWorkflow();});
     document.addEventListener('scenebook-workflow-status',refreshWorkflow);document.addEventListener('scenebook-settings-changed',refreshWorkflow);
     if(!host)dialog.addEventListener('close',()=>{document.removeEventListener('scenebook-workflow-status',refreshWorkflow);document.removeEventListener('scenebook-settings-changed',refreshWorkflow);},{once:true});refreshWorkflow();
@@ -210,7 +217,7 @@ export function studio(api,host=null) {
             addField(world,fields,'playerMode','플레이어',c.playerMode,{choices:[['auto','본문에 따라 판단'],['pov','화면 밖 · POV'],['visible','등장 가능']]});
             const list=el('div','ap2-stack'); page.append(list);
             let drafts=structuredClone(c.library);const history=[];const remember=()=>{history.push(structuredClone(drafts));if(history.length>20)history.shift();};
-            const undo=button('되돌리기',()=>{if(!history.length)return;drafts=history.pop();render(true);});toolbar.append(undo);
+            const undo=button('되돌리기',()=>{if(!history.length)return;drafts=history.pop();render(true);},false,'fa-rotate-left');toolbar.append(undo);
             const render=(save=false)=>{undo.disabled=!history.length;list.replaceChildren();if(!drafts.length)list.append(el('p','ap2-empty','등록한 인물이 없습니다.'));for(const [i,item]of drafts.entries()){
                 const card=el('details','ap2-character'), f={};card.open=drafts.length===1||!item.name;const title=el('summary','',item.name||'새 인물');card.append(title);
                 for(const [key,label,multi]of [['name','이름',false],['appearance','고정 외형',true],['outfit','기본 복장',true],['negative','인물 제외 요소',true]])addField(card,f,key,label,item[key]??'',{multiline:multi});
@@ -225,7 +232,7 @@ export function studio(api,host=null) {
                     row.append(button('삭제',async()=>{if(!await confirmAction('외형 삭제',`“${profile.name||'이 외형'}”을 삭제할까요?`))return;remember();item.profiles.splice(pi,1);render(true);}));variants.append(row);
                 }
                 variants.append(button('외형 추가',()=>{if(item.profiles.length>=10)throw new Error('외형 프로필은 최대 10개입니다.');remember();item.profiles.push({id:crypto.randomUUID(),name:'새 외형',condition:'',appearance:'',outfit:''});render(true);}));card.append(variants);
-                const actions=el('div','ap2-actions');const up=button('위로',()=>{if(!i)return;remember();[drafts[i-1],drafts[i]]=[drafts[i],drafts[i-1]];render(true);}),down=button('아래로',()=>{if(i>=drafts.length-1)return;remember();[drafts[i+1],drafts[i]]=[drafts[i],drafts[i+1]];render(true);});up.disabled=i===0;down.disabled=i===drafts.length-1;actions.append(up,down,button('삭제',async()=>{if(!await confirmAction('인물 삭제',`“${item.name||'이 인물'}”을 라이브러리에서 삭제할까요? 인물 탭을 떠나기 전 되돌리기로 복구할 수 있습니다.`))return;remember();drafts.splice(i,1);render(true);}));card.append(actions);list.append(card);
+                const actions=el('div','ap2-actions');const up=iconButton('위로','fa-arrow-up',()=>{if(!i)return;remember();[drafts[i-1],drafts[i]]=[drafts[i],drafts[i-1]];render(true);}),down=iconButton('아래로','fa-arrow-down',()=>{if(i>=drafts.length-1)return;remember();[drafts[i+1],drafts[i]]=[drafts[i],drafts[i+1]];render(true);});up.disabled=i===0;down.disabled=i===drafts.length-1;actions.classList.add('ap2-card-actions');actions.append(up,down,iconButton('인물 삭제','fa-trash-can',async()=>{if(!await confirmAction('인물 삭제',`“${item.name||'이 인물'}”을 라이브러리에서 삭제할까요? 인물 탭을 떠나기 전 되돌리기로 복구할 수 있습니다.`))return;remember();drafts.splice(i,1);render(true);}));card.append(actions);list.append(card);
             }if(save)page.dispatchEvent(new Event('input'));};render();
             const readVisual=()=>({...readFields(fields),library:structuredClone(drafts)});
             saveBar(page,()=>api.saveVisual(readVisual(),editingScope,contextKey));
@@ -242,7 +249,7 @@ export function studio(api,host=null) {
                 if(!await confirmAction('설정 범위 해제','이 범위에 저장한 인물·세계관 설정을 해제하고 상위 범위의 설정을 사용할까요?','해제'))return;
                 await api.resetVisual(editingScope,contextKey);if(contextKey===api.contextKey())await open('characters',true);
             });
-            if(editingScope!=='account')page.append(reset);
+            const tail=el('div','ap2-actions ap2-page-tail');if(editingScope!=='account')tail.append(reset);
             const refreshScope=()=>{
                 reset.disabled=!api.hasVisualOverride(editingScope);
                 const label={account:'계정 전체',character:'현재 캐릭터',chat:'현재 채팅'},active=api.visualScope();
@@ -250,7 +257,7 @@ export function studio(api,host=null) {
                 scopeHelp.textContent=`${range} 적용 우선순위: 채팅 → 캐릭터 → 전체. 현재 적용: ${label[active]}.${!api.visualCharacterKey()?' 캐릭터 범위는 1:1 채팅에서 설정합니다.':''}`;
             };
             page.addEventListener('scenebook-visual-status',refreshScope);refreshScope();
-            page.append(button('다시 불러오기',()=>open('characters',true)));
+            tail.append(button('다시 불러오기',()=>open('characters',true),false,'fa-rotate-right'));page.append(tail);
         }
         if(id==='references') {
             const c=api.settings(),selected=structuredClone(c.references??[]);
@@ -276,17 +283,19 @@ export function studio(api,host=null) {
                 rows.push({id:ref.id,read:()=>({id:ref.id,...readFields(f)})});page.append(card);
             }
             if(refs.length)saveBar(page,()=>{const references=rows.map(row=>row.read()).filter(r=>r.enabled).map(({enabled,...r})=>r);api.saveSettings({...api.settings(),references});});
-            page.append(button('모두 해제',()=>{api.saveSettings({...api.settings(),references:[]});return open('references',true);}));
+            if(refs.length)page.append(button('모두 해제',()=>{api.saveSettings({...api.settings(),references:[]});return open('references',true);}));
         }
         if(id==='gallery') {
             await mountGallery(page,api,()=>open('gallery',true),()=>cached.get(id)===page&&page.isConnected);
         }
         if(id==='queue'){
-            const actions=el('div','ap2-actions');actions.append(button(api.queuePaused()?'재개':'일시정지',()=>{api.toggleQueue();return open('queue');}),button('대기 취소',()=>{api.cancelQueue();return open('queue');}),actionMenu([{label:'새로고침',icon:'fa-rotate-right',run:()=>open('queue')},{label:'지시 기록',icon:'fa-file-lines',run:()=>api.showPlans()}]));page.append(actions);
-            page.append(el('p','ap2-muted',`이번 접속 이미지 요청 ${api.usage()}회`));
-            page.append(button('계정 사용량',async()=>{const account=await api.account(),{body}=modal('계정 사용량');body.append(el('p','',`구독 ${account.active?'활성':'비활성'} · 등급 ${account.tier??'확인 불가'}`));body.append(el('p','',`잔여 Anlas ${account.trainingStepsLeft?Number(account.trainingStepsLeft.fixedTrainingStepsLeft??0)+Number(account.trainingStepsLeft.purchasedTrainingSteps??0):'확인 불가'}`));}));
+            const usage=async()=>{const account=await api.account(),{dialog:d,body}=modal('계정 사용량');d.classList.add('ap2-compact');body.append(el('p','',`구독 ${account.active?'활성':'비활성'} · 등급 ${account.tier??'확인 불가'}`));body.append(el('p','',`잔여 Anlas ${account.trainingStepsLeft?Number(account.trainingStepsLeft.fixedTrainingStepsLeft??0)+Number(account.trainingStepsLeft.purchasedTrainingSteps??0):'확인 불가'}`));};
+            const waiting=api.queue().filter(item=>item.state==='waiting').length,cancel=button('대기 취소',()=>{api.cancelQueue();return open('queue');},false,'fa-ban');cancel.disabled=!waiting;
+            const actions=el('div','ap2-actions');actions.append(button(api.queuePaused()?'재개':'일시정지',()=>{api.toggleQueue();return open('queue');},false,api.queuePaused()?'fa-play':'fa-pause'),cancel,actionMenu([{label:'지시 기록',icon:'fa-file-lines',run:()=>api.showPlans()},{label:'계정 사용량',icon:'fa-coins',run:usage},{label:'새로고침',icon:'fa-rotate-right',run:()=>open('queue')}]));page.append(actions);
+            page.append(el('p','ap2-muted',`이번 접속 이미지 요청 ${api.usage()} / ${api.settings().sessionLimit}회${api.queuePaused()?' · 일시정지됨':''}`));
             if(!api.queue().length)page.append(el('p','ap2-empty','진행 중인 작업이 없습니다.'));
-            for(const item of [...api.queue()].reverse()){const row=el('div','ap2-card');row.append(el('strong','',item.label||'삽화'),el('p','',`${item.state}${item.error?' · '+item.error:''}`));page.append(row);}
+            const states={waiting:'대기 중',running:'생성 중',done:'완료',failed:'실패',cancelled:'취소됨'};
+            for(const item of [...api.queue()].reverse()){const row=el('div','ap2-job'),chip=el('span','ap2-chip',states[item.state]??item.state);chip.dataset.state=item.state;row.append(el('strong','',item.label||'삽화'),chip);if(item.error)row.append(el('p','ap2-muted',item.error));page.append(row);}
         }
     };
     tabs.forEach(([id,label,icon])=>{const b=button(label,()=>open(id),false,icon);b.classList.remove('menu_button','menu_button_icon');b.classList.add('ap2-tab');b.dataset.page=id;b.id=`${instanceId}-tab-${id}`;b.setAttribute('role','tab');b.setAttribute('aria-controls',`${instanceId}-page-${id}`);nav.append(b);});
@@ -294,8 +303,9 @@ export function studio(api,host=null) {
     const refreshCharacters=()=>{const page=cached.get('characters');if(!body.isConnected||!page)return;page.dispatchEvent(new Event('scenebook-visual-status'));if(page.dataset.dirty==='true')return;if(activeId==='characters')void open('characters',true);else{page.remove();cached.delete('characters');}};
     const refreshSettings=()=>{if(body.isConnected&&cached.has('generation')&&cached.get('generation').dataset.dirty!=='true'){if(activeId==='generation')void open('generation',true);else{cached.get('generation').remove();cached.delete('generation');}}refreshCharacters();};
     const refreshContext=()=>{characterScope=null;const page=cached.get('characters');if(page?.dataset.dirty==='true')notice('저장되지 않은 인물 입력이 있었습니다. 이전 채팅에는 마지막으로 저장된 설정이 유지됩니다.');page?.remove();cached.delete('characters');if(body.isConnected&&activeId==='characters')void open('characters',true);};
+    const refreshQueue=()=>{if(body.isConnected&&activeId==='queue'&&!document.querySelector('.ap2-action-panel:popover-open'))void open('queue');};document.addEventListener('scenebook-workflow-status',refreshQueue);
     document.addEventListener('scenebook-settings-changed',refreshSettings);document.addEventListener('scenebook-visual-changed',refreshCharacters);document.addEventListener('scenebook-context-changed',refreshContext);
-    if(!host)dialog.addEventListener('close',()=>{document.removeEventListener('scenebook-settings-changed',refreshSettings);document.removeEventListener('scenebook-visual-changed',refreshCharacters);document.removeEventListener('scenebook-context-changed',refreshContext);},{once:true});
+    if(!host)dialog.addEventListener('close',()=>{document.removeEventListener('scenebook-workflow-status',refreshQueue);document.removeEventListener('scenebook-settings-changed',refreshSettings);document.removeEventListener('scenebook-visual-changed',refreshCharacters);document.removeEventListener('scenebook-context-changed',refreshContext);},{once:true});
     void check();void open('generation');
 
 }
@@ -335,7 +345,7 @@ async function mountGallery(page,api,refresh,isCurrent) {
                 viewer(job,{actions:[
                     {label:'삽입',icon:'fa-plus',close:true,run:()=>{ensureScope();return api.recover(job);}},
                     {label:'편집',icon:'fa-sliders',close:true,run:()=>{ensureScope();return api.importScene(job.scene,job.config);}},
-                ],more:[{label:'AI 검수',run:()=>api.review(job)},{label:'생성 기록',run:()=>inspect(job)}]});
+                ],more:[{label:'AI 검수',icon:'fa-magnifying-glass',run:()=>api.review(job)},{label:'생성 기록',icon:'fa-file-lines',run:()=>inspect(job)}]});
             });
             card.className='ap2-gallery-item';card.replaceChildren();card.title=title;card.setAttribute('aria-label',`${title} · ${ready?'이미지 보기':'작업 확인'}`);
             if(ready){const img=el('img');img.src=job.url;img.loading='lazy';img.decoding='async';img.alt='';card.append(img);}
@@ -352,13 +362,14 @@ export function inspect(job) {
 }
 export function viewer(job,{actions=[],more=[]}={}) {
     if(!safeImagePath(job.url))throw new Error('이미지 경로를 확인할 수 없습니다.');
-    const {dialog,body}=modal(job.scene?.title??'삽화');dialog.classList.add('ap2-viewer');
+    const meta=[MODELS[job.config?.model]?.label,job.config?.width&&`${job.config.width} × ${job.config.height}`,job.seed!==undefined&&`Seed ${job.seed}`].filter(Boolean).join(' · ');
+    const {dialog,body}=modal(job.scene?.title??'삽화',meta);dialog.classList.add('ap2-viewer');
     const img=el('img','ap2-full');img.src=job.url;img.alt=job.scene?.title??'삽화';body.append(img);
     const footer=el('footer','ap2-footer ap2-viewer-footer');
     const run=item=>{if(item.close)dialog.close();return item.run();};
-    for(const item of actions)footer.append(button(item.label,()=>run(item),false,item.icon??''));
-    const download=el('a','ap2-button ap2-icon-button');download.href=job.url;download.download=`${job.id}.png`;download.title='원본 PNG 저장';download.setAttribute('aria-label','원본 PNG 저장');
-    const glyph=el('i','fa-solid fa-download');glyph.setAttribute('aria-hidden','true');download.append(glyph);footer.append(download);
+    for(const item of actions){const b=button(item.label,()=>run(item),false,item.icon??'');if(item.danger)b.classList.add('ap2-danger');footer.append(b);}
+    const download=el('a','ap2-button');download.href=job.url;download.download=`${job.id}.png`;download.title='원본 PNG 저장';download.setAttribute('aria-label','원본 PNG 저장');
+    const glyph=el('i','fa-solid fa-download');glyph.setAttribute('aria-hidden','true');download.append(glyph,el('span','','저장'));footer.append(download);
     if(more.length)footer.append(actionMenu(more.map(item=>({...item,run:()=>run(item)}))));
     dialog.append(footer);return dialog;
 }
@@ -376,7 +387,7 @@ export function compareVersions(versions,currentIndex){
 export function mountSettings(api,container){
     const drawer=el('div','inline-drawer');drawer.id='ap2-settings';
     const header=el('div','inline-drawer-toggle inline-drawer-header');header.tabIndex=0;header.setAttribute('role','button');header.setAttribute('aria-expanded','false');header.setAttribute('aria-controls','ap2-settings-content');
-    const label=el('b','ap2-drawer-title','씬북'),version=el('small','ap2-version','0.4.19'),status=el('small','ap2-muted','');status.id='ap2-status';label.append(version);
+    const label=el('b','ap2-drawer-title','씬북'),version=el('small','ap2-version','0.4.20'),status=el('small','ap2-muted','');status.id='ap2-status';label.append(version);
     const icon=el('div','inline-drawer-icon fa-solid fa-circle-chevron-down down');icon.setAttribute('aria-hidden','true');header.append(label,status,icon);
     const content=el('div','inline-drawer-content ap2-settings');content.id='ap2-settings-content';content.style.display='none';
     drawer.append(header,content);container.append(drawer);

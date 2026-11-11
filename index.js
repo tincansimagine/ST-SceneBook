@@ -1,3 +1,4 @@
+import './src/compat.mjs';
 import { ConnectionManagerRequestService } from '../../shared.js';
 import { requestAnalysis,analysisError } from './src/connection.mjs';
 import { notify,progressNotice } from './src/notifications.mjs';
@@ -270,13 +271,13 @@ function openIllustration(index,slot) {
     if(!viewState(target,false)?.slots.includes(slot)||slot.deleted)throw new Error('대상 답변이 바뀌었습니다. 이미지를 다시 열어 주세요.');
     const ensureCurrent=()=>{if(!current(target)||slot.deleted)throw new Error('대상 답변이 바뀌었습니다. 이미지를 다시 열어 주세요.');return context().chat.indexOf(target.message);};
     const dialog=viewer(job,{
-        actions:[{label:'삭제',icon:'fa-trash-can',run:async()=>{if(await deleteIllustration(target,slot))dialog.close();}}],
+        actions:[{label:'삭제',icon:'fa-trash-can',danger:true,run:async()=>{if(await deleteIllustration(target,slot))dialog.close();}}],
         more:[
             {label:'AI 검수',icon:'fa-magnifying-glass',run:()=>reviewImage(job)},
             {label:'생성 기록',icon:'fa-file-lines',run:()=>inspect(job)},
             ...(slot.versions.length>1?[{label:'버전 비교',icon:'fa-columns',run:()=>compareVersions(slot.versions,slot.selected)}]:[]),
-            {label:'같은 시드로 생성',run:()=>{ensureCurrent();return enqueue(target,[job.scene],slot.id,{...job.config,seed:job.seed});}},
-            {label:'기본 시드로 저장',run:()=>{saveSettings({...settings(),seed:job.seed});notice(`Seed ${job.seed} 저장됨`);}},
+            {label:'같은 시드로 생성',icon:'fa-rotate-right',run:()=>{ensureCurrent();return enqueue(target,[job.scene],slot.id,{...job.config,seed:job.seed});}},
+            {label:'기본 시드로 저장',icon:'fa-thumbtack',run:()=>{saveSettings({...settings(),seed:job.seed});notice(`Seed ${job.seed} 저장됨`);}},
         ],
     });
 }
@@ -308,7 +309,7 @@ function renderMessage(index) {
         if(slot.versions.length>1){
             const change=async delta=>{const target=targetForImage();slot.selected=(slot.selected+delta+slot.versions.length)%slot.versions.length;await saveMessage(target);};
             const navigation=el('div','ap2-image-navigation');navigation.setAttribute('role','group');navigation.setAttribute('aria-label','삽화 버전 전환');
-            const back=button('‹',()=>change(-1)),next=button('›',()=>change(1));
+            const back=button('',()=>change(-1),false,'fa-chevron-left'),next=button('',()=>change(1),false,'fa-chevron-right');
             for(const [b,label]of [[back,'이전 그림'],[next,'다음 그림']]){b.classList.remove('menu_button','menu_button_icon');b.setAttribute('aria-label',label);b.title=label;}
             navigation.append(back,el('span','ap2-version-count',`${slot.selected+1}/${slot.versions.length}`),next);
             figure.append(navigation);
