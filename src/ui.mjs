@@ -103,7 +103,7 @@ function saveBar(page,save){
     // Commit values to ST's settings on every edit. ST batches disk writes; a
     // closed drawer, tab switch or extension update cannot discard form-only edits.
     page.addEventListener('input',commit);page.addEventListener('change',commit);
-    state.textContent='';state.setAttribute('role','status');row.append(state);page.append(row);
+    state.textContent='변경하면 자동으로 저장됩니다';state.setAttribute('role','status');row.append(state);page.append(row);
 }
 function installationHelp(){
     const {body}=modal('연결 안내');
@@ -125,7 +125,7 @@ export function studio(api,host=null) {
     const workflow=el('section','ap2-workflow'),mode=segmented('처리 방식',[['generate','자동 생성'],['review','초안만']],api.settings().automatic==='review'?'review':'generate',value=>{api.saveSettings({...api.settings(),automatic:value});refreshWorkflow();}),injection=field('프롬프트 주입',workflowEnabled(api.settings()),{type:'checkbox'}),flowHelp=el('small','ap2-muted'),flowRow=el('div','ap2-workflow-row'),flowStatus=el('p','ap2-workflow-status');flowStatus.setAttribute('role','status');injection.wrap.classList.add('ap2-workflow-toggle');injection.wrap.append(flowHelp);
     const editInjection=button('프롬프트',()=>promptEditor(api.settings(),value=>api.saveSettings({...api.settings(),...value}),{initial:'injection'}),false,'fa-pen');editInjection.title='기본 삽화 프롬프트 보기·수정';
     flowRow.append(mode.wrap,editInjection);workflow.append(injection.wrap,flowRow,flowStatus);
-    const refreshWorkflow=()=>{const c=api.settings(),on=workflowEnabled(c),every=c.every===1?'답변마다':`답변 ${c.every}개마다`;mode.set(c.automatic==='review'?'review':'generate');injection.input.checked=on;flowRow.hidden=!on;flowHelp.textContent=!on?'꺼짐':c.automatic==='review'?'초안만 저장 · 장면 편집에서 생성':`${every} 자동 생성`;const status=api.status?.()||'';flowStatus.textContent=status;flowStatus.hidden=!status;};
+    const refreshWorkflow=()=>{const c=api.settings(),on=workflowEnabled(c),every=c.every===1?'답변마다':`답변 ${c.every}개마다`;mode.set(c.automatic==='review'?'review':'generate');injection.input.checked=on;flowRow.hidden=!on;flowHelp.textContent=!on?'꺼짐 · 삽화 지시를 넣지 않고 자동 처리도 멈춥니다.':c.automatic==='review'?'AI 답변에 삽화 지시를 받아 초안으로 저장합니다. 장면 편집에서 확인한 뒤 생성하세요.':`AI 답변에 삽화 지시를 받아 ${every} 이미지를 자동으로 만듭니다.`;const status=api.status?.()||'';flowStatus.textContent=status;flowStatus.hidden=!status;};
     injection.input.addEventListener('change',()=>{const c=api.settings(),enabled=injection.read();api.saveSettings({...c,promptInjection:enabled,automatic:enabled&&c.automatic==='off'?'generate':c.automatic});refreshWorkflow();});
     document.addEventListener('scenebook-workflow-status',refreshWorkflow);document.addEventListener('scenebook-settings-changed',refreshWorkflow);
     if(!host)dialog.addEventListener('close',()=>{document.removeEventListener('scenebook-workflow-status',refreshWorkflow);document.removeEventListener('scenebook-settings-changed',refreshWorkflow);},{once:true});refreshWorkflow();
@@ -149,7 +149,7 @@ export function studio(api,host=null) {
             const sizes=el('div','ap2-size-presets');
             for(const [label,w,h]of [['세로',832,1216],['정사각',1024,1024],['가로',1216,832]])sizes.append(button(label,()=>{fields.width.input.value=w;fields.height.input.value=h;page.dispatchEvent(new Event('input',{bubbles:true}));}));
             image.append(sizes);
-            addField(image,fields,'autoSize','장면에 맞춰 세로·가로 전환',c.autoSize,{type:'checkbox',help:'장면마다 세로·가로·정사각 자동 선택'});
+            addField(image,fields,'autoSize','장면에 맞춰 세로·가로 전환',c.autoSize,{type:'checkbox',help:'누운 장면은 가로, 서 있는 장면은 세로처럼 AI가 장면마다 화면 비율을 고릅니다. 픽셀 수는 위 설정과 비슷하게 유지합니다.'});
             const sampling=el('div','ap2-grid');image.append(sampling);
             addField(sampling,fields,'steps','Steps',c.steps,{type:'number',min:1,max:50,step:1});
             addField(sampling,fields,'scale','Guidance',c.scale,{type:'number',min:0,max:10,step:0.1});
@@ -162,7 +162,7 @@ export function studio(api,host=null) {
             const prompts=settingGroup(page,'프롬프트',true);
             addField(prompts,fields,'style','메인 프롬프트',c.style,{multiline:true});
             addField(prompts,fields,'negative','UC 프롬프트',c.negative,{multiline:true,rows:2});
-            addField(prompts,fields,'leanPrompt','간결한 삽화 지시문',c.leanPrompt,{type:'checkbox',help:'지시문을 1/4 길이로. 삽화가 자주 빠지면 끄기'});
+            addField(prompts,fields,'leanPrompt','간결한 삽화 지시문',c.leanPrompt,{type:'checkbox',help:'대화 AI에 매번 보내는 삽화 지시문을 짧은 버전으로 바꿔 입력 토큰을 줄입니다. 삽화 지시가 자주 빠지면 끄세요.'});
             prompts.append(button('편집 · 공유',()=>promptEditor({...api.settings(),...readFields(fields)},value=>{for(const key of ['style','negative'])fields[key].input.value=value[key];fields.quality.input.checked=value.quality;for(const key of ['analysisPrompt','injectionPrompt'])fields[key]={read:()=>value[key]};api.saveSettings({...api.settings(),...value});}),false,'fa-pen'));
             const automatic=settingGroup(page,'자동 생성 한도',true);
             const limits=el('div','ap2-grid');automatic.append(limits);
@@ -189,7 +189,7 @@ export function studio(api,host=null) {
             let frame=c.frame;const frames=el('div','ap2-frame-picker');frames.setAttribute('role','radiogroup');frames.setAttribute('aria-label','삽화 테두리');
             for(const [id,label]of FRAMES){
                 const choice=el('button','ap2-frame-choice');choice.type='button';choice.setAttribute('role','radio');choice.setAttribute('aria-checked',String(id===frame));
-                const sample=el('span','ap2-figure');sample.dataset.frame=id;const wrap=el('span','ap2-image-wrap');wrap.append(el('span','ap2-frame-sample'));sample.append(wrap);choice.append(sample,el('span','ap2-frame-name',label));
+                const sample=el('span','ap2-figure');sample.dataset.frame=id;const wrap=el('span','ap2-image-wrap'),inner=el('span','ap2-image-open');inner.append(el('span','ap2-frame-sample'));wrap.append(inner);sample.append(wrap);choice.append(sample,el('span','ap2-frame-name',label));
                 choice.addEventListener('click',()=>{frame=id;for(const b of frames.children)b.setAttribute('aria-checked',String(b===choice));page.dispatchEvent(new Event('input'));});frames.append(choice);
             }
             fields.frame={read:()=>frame};display.append(el('p','ap2-frame-title','삽화 테두리'),frames);
@@ -398,7 +398,7 @@ export function compareVersions(versions,currentIndex){
 export function mountSettings(api,container){
     const drawer=el('div','inline-drawer');drawer.id='ap2-settings';
     const header=el('div','inline-drawer-toggle inline-drawer-header');header.tabIndex=0;header.setAttribute('role','button');header.setAttribute('aria-expanded','false');header.setAttribute('aria-controls','ap2-settings-content');
-    const label=el('b','ap2-drawer-title','씬북'),version=el('small','ap2-version','0.4.23'),status=el('small','ap2-muted','');status.id='ap2-status';label.append(version);
+    const label=el('b','ap2-drawer-title','씬북'),version=el('small','ap2-version','0.4.24'),status=el('small','ap2-muted','');status.id='ap2-status';label.append(version);
     const icon=el('div','inline-drawer-icon fa-solid fa-circle-chevron-down down');icon.setAttribute('aria-hidden','true');header.append(label,status,icon);
     const content=el('div','inline-drawer-content ap2-settings');content.id='ap2-settings-content';content.style.display='none';
     drawer.append(header,content);container.append(drawer);
