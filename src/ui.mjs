@@ -6,7 +6,7 @@ import { imageImport } from './import-ui.mjs';
 import { promptEditor } from './prompt-ui.mjs';
 import { notice,placeNotices } from './notifications.mjs';
 import { workflowEnabled } from './automatic.mjs';
-import { FRAMES } from './framing.mjs';
+import { applyFrame, frameChoices } from './frames-ui.mjs';
 export { notice } from './notifications.mjs';
 export { composer } from './editor.mjs';
 
@@ -185,14 +185,23 @@ export function studio(api,host=null) {
             addField(display,fields,'placement','삽입 위치',c.placement,{choices:[['end','답변 아래'],['inline','문단 뒤']]});
             addField(display,fields,'displayWidth','최대 너비',c.displayWidth,{type:'number',min:240,max:1200,step:1});
             addField(display,fields,'compact','작게 표시',c.compact,{type:'checkbox'});
-            // Frame styles are previewed with the same CSS the chat uses.
-            let frame=c.frame;const frames=el('div','ap2-frame-picker');frames.setAttribute('role','radiogroup');frames.setAttribute('aria-label','삽화 테두리');
-            for(const [id,label]of FRAMES){
-                const choice=el('button','ap2-frame-choice');choice.type='button';choice.setAttribute('role','radio');choice.setAttribute('aria-checked',String(id===frame));
-                const sample=el('span','ap2-figure');sample.dataset.frame=id;const wrap=el('span','ap2-image-wrap'),inner=el('span','ap2-image-open');inner.append(el('span','ap2-frame-sample'));wrap.append(inner);sample.append(wrap);choice.append(sample,el('span','ap2-frame-name',label));
-                choice.addEventListener('click',()=>{frame=id;for(const b of frames.children)b.setAttribute('aria-checked',String(b===choice));page.dispatchEvent(new Event('input'));});frames.append(choice);
+            // Each tile draws its frame with the same code the chat uses.
+            let frame=c.frame,frameWide=c.frameWide??'';const frames=el('div','ap2-frame-picker');frames.setAttribute('role','radiogroup');frames.setAttribute('aria-label','삽화 액자');
+            for(const item of frameChoices(c)){
+                const choice=el('button','ap2-frame-choice');choice.type='button';choice.setAttribute('role','radio');choice.setAttribute('aria-checked',String(item.id===frame));choice.title=item.label;
+                const sample=el('span','ap2-figure'),wrap=el('span','ap2-image-wrap'),inner=el('span','ap2-image-open');inner.append(el('span','ap2-frame-sample'));wrap.append(inner);sample.append(wrap);
+                applyFrame(sample,wrap,inner,4,5,{frame:item.id,customFrames:c.customFrames});choice.append(sample,el('span','ap2-frame-name',item.label));
+                choice.addEventListener('click',()=>{frame=item.id;for(const b of frames.children)b.setAttribute('aria-checked',String(b===choice));page.dispatchEvent(new Event('input'));});frames.append(choice);
             }
-            fields.frame={read:()=>frame};display.append(el('p','ap2-frame-title','삽화 테두리'),frames);
+            fields.frame={read:()=>frame};fields.frameWide={read:()=>frameWide};
+            const frameFile=el('input');frameFile.type='file';frameFile.accept='image/png,image/webp';frameFile.hidden=true;
+            frameFile.addEventListener('change',async()=>{try{const file=frameFile.files?.[0];if(!file)return;await api.addFrame(file);notice('액자 그림을 추가했습니다.');}catch(e){notice(e.message,true);}finally{frameFile.value='';}});
+            const frameTools=el('div','ap2-actions');frameTools.append(frameFile,button('액자 그림 추가',()=>frameFile.click(),false,'fa-plus'));
+            if(c.customFrames?.length){
+                frameTools.append(actionMenu(c.customFrames.map(f=>({label:`“${f.name}” 삭제`,icon:'fa-trash-can',run:async()=>{if(await confirmAction('액자 삭제',`“${f.name}” 액자 그림을 삭제할까요?`))await api.removeFrame(f.id);}})),'액자 그림 관리'));
+                const wide=field('가로 그림에는',frameWide,{choices:[['','같은 액자'],...frameChoices(c).map(x=>[x.id,x.label])]});wide.input.addEventListener('change',()=>{frameWide=wide.read();});display.append(el('p','ap2-frame-title','삽화 액자'),frames,frameTools,wide.wrap);
+            }else display.append(el('p','ap2-frame-title','삽화 액자'),frames,frameTools);
+            display.append(el('p','ap2-muted','가운데가 투명한 PNG·WebP 액자 그림을 추가하면 삽화에 씌웁니다. 세로용·가로용을 따로 넣을 수 있습니다.'));
             saveBar(page,()=>api.saveSettings({...api.settings(),...readFields(fields)}));
             const presets=settingGroup(page,'프리셋 · 백업',true);
             const presetName=field('이름','');presets.append(presetName.wrap);
@@ -398,7 +407,7 @@ export function compareVersions(versions,currentIndex){
 export function mountSettings(api,container){
     const drawer=el('div','inline-drawer');drawer.id='ap2-settings';
     const header=el('div','inline-drawer-toggle inline-drawer-header');header.tabIndex=0;header.setAttribute('role','button');header.setAttribute('aria-expanded','false');header.setAttribute('aria-controls','ap2-settings-content');
-    const label=el('b','ap2-drawer-title','씬북'),version=el('small','ap2-version','0.4.24'),status=el('small','ap2-muted','');status.id='ap2-status';label.append(version);
+    const label=el('b','ap2-drawer-title','씬북'),version=el('small','ap2-version','0.4.25'),status=el('small','ap2-muted','');status.id='ap2-status';label.append(version);
     const icon=el('div','inline-drawer-icon fa-solid fa-circle-chevron-down down');icon.setAttribute('aria-hidden','true');header.append(label,status,icon);
     const content=el('div','inline-drawer-content ap2-settings');content.id='ap2-settings-content';content.style.display='none';
     drawer.append(header,content);container.append(drawer);

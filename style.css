@@ -381,54 +381,23 @@ details.ap2-group[open] > summary { border-bottom-left-radius: 0; border-bottom-
 .ap2-figure[data-frame=none] .ap2-image-wrap { border-radius: 0; box-shadow: none; }
 /* Keyline: a hairline set off from the picture. */
 .ap2-figure[data-frame=line] .ap2-image-wrap { padding: calc(7px * var(--u)); border: 1px solid color-mix(in srgb, var(--ap2-fg) 55%, transparent); border-radius: 0; box-shadow: none; }
-/* Instant photo: thick bottom margin, matte paper, the print sits slightly recessed. */
-.ap2-figure[data-frame=polaroid] .ap2-image-wrap { padding: calc(14px * var(--u)) calc(14px * var(--u)) calc(58px * var(--u)); border-radius: calc(2px * var(--u)); background: var(--ap2-grain), linear-gradient(#f8f6ef, #eeebe1); box-shadow: 0 1px 1px #0005, 0 calc(8px * var(--u)) calc(22px * var(--u)) #0007; }
-.ap2-figure[data-frame=polaroid] .ap2-image-open { box-shadow: inset 0 0 0 1px #0003, 0 0 0 1px #00000014; }
-.ap2-figure[data-frame=polaroid] .ap2-image-open img { filter: contrast(.97) saturate(.96); }
-/* 35mm strip: rounded sprocket holes along both edges. */
-.ap2-figure[data-frame=film] .ap2-image-wrap { padding: calc(26px * var(--u)) calc(4px * var(--u)); border-radius: calc(2px * var(--u)); background: #0e0d0c; box-shadow: 0 calc(4px * var(--u)) calc(14px * var(--u)) #0008; }
-.ap2-figure[data-frame=film] .ap2-image-wrap::before, .ap2-figure[data-frame=film] .ap2-image-wrap::after { content: ''; position: absolute; left: 0; right: 0; height: calc(12px * var(--u)); background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='26' height='12'%3E%3Crect x='7.5' y='1' width='11' height='10' rx='2.2' fill='%23d6d2c6'/%3E%3C/svg%3E") 0 0 / auto 100% repeat-x; opacity: .92; pointer-events: none; }
-.ap2-figure[data-frame=film] .ap2-image-wrap::before { top: calc(7px * var(--u)); }
-.ap2-figure[data-frame=film] .ap2-image-wrap::after { bottom: calc(7px * var(--u)); }
-/* Postage stamp: scalloped paper edge. */
-.ap2-figure[data-frame=stamp] { filter: drop-shadow(0 calc(2px * var(--u)) calc(3px * var(--u)) #0008); }
-.ap2-figure[data-frame=stamp] .ap2-image-wrap { --r: calc(5px * var(--u)); padding: calc(16px * var(--u)); border-radius: 0; box-shadow: none; background: var(--ap2-grain), var(--ap2-paper);
-    -webkit-mask: linear-gradient(#000 0 0) center / calc(100% - 2 * var(--r)) calc(100% - 2 * var(--r)) no-repeat, radial-gradient(#000 62%, #0000 66%) 0 0 / calc(2 * var(--r)) calc(2 * var(--r)) round;
-    mask: linear-gradient(#000 0 0) center / calc(100% - 2 * var(--r)) calc(100% - 2 * var(--r)) no-repeat, radial-gradient(#000 62%, #0000 66%) 0 0 / calc(2 * var(--r)) calc(2 * var(--r)) round; }
-.ap2-figure[data-frame=stamp] .ap2-image-open { box-shadow: 0 0 0 1px #0002; }
-/* Album page: a bordered print held by four corner mounts. */
-.ap2-figure[data-frame=corners] .ap2-image-wrap { padding: calc(20px * var(--u)); border-radius: calc(2px * var(--u)); background: var(--ap2-grain), #d9cfb8; box-shadow: 0 calc(3px * var(--u)) calc(12px * var(--u)) #0007; }
-.ap2-figure[data-frame=corners] .ap2-image-open { padding: calc(5px * var(--u)); background: #fbfaf5; box-shadow: 0 1px calc(3px * var(--u)) #0006; }
-.ap2-figure[data-frame=corners] .ap2-image-wrap::after { content: ''; position: absolute; inset: calc(15px * var(--u)); pointer-events: none; --c: calc(19px * var(--u));
-    background: linear-gradient(135deg, #1b1917 var(--c), #0000 0) top left, linear-gradient(225deg, #1b1917 var(--c), #0000 0) top right, linear-gradient(45deg, #1b1917 var(--c), #0000 0) bottom left, linear-gradient(315deg, #1b1917 var(--c), #0000 0) bottom right;
-    background-size: calc(40px * var(--u)) calc(40px * var(--u)); background-repeat: no-repeat; filter: drop-shadow(0 1px 1px #0005); }
-/* Framed print: slim black moulding, wide mat with a cut bevel. */
-.ap2-figure[data-frame=mat] .ap2-image-wrap { padding: 9%; border: calc(7px * var(--u)) solid #121110; border-radius: 0; background: var(--ap2-grain), #f1eee6; box-shadow: inset 0 0 0 1px #ffffff14, inset 0 calc(3px * var(--u)) calc(8px * var(--u)) #0000002e, 0 calc(8px * var(--u)) calc(22px * var(--u)) #0009; }
-.ap2-figure[data-frame=mat] .ap2-image-open { box-shadow: 0 0 0 calc(2px * var(--u)) #fdfcf8, calc(1px * var(--u)) calc(1px * var(--u)) 0 calc(2px * var(--u)) #b5afa2, calc(-1px * var(--u)) calc(-1px * var(--u)) 0 calc(2px * var(--u)) #d9d4c8; }
-/* Taped print: paper tape across the top corners, ends torn. */
-.ap2-figure[data-frame=tape] { padding-top: calc(12px * var(--u)); }
-.ap2-figure[data-frame=tape] .ap2-image-wrap { padding: calc(9px * var(--u)); overflow: visible; border-radius: 1px; background: var(--ap2-grain), #f7f5ee; box-shadow: 0 1px 1px #0004, 0 calc(5px * var(--u)) calc(14px * var(--u)) #0007; }
-.ap2-figure[data-frame=tape] .ap2-image-wrap::before, .ap2-figure[data-frame=tape] .ap2-image-wrap::after { content: ''; position: absolute; top: calc(4px * var(--u)); width: calc(86px * var(--u)); height: calc(24px * var(--u)); background: linear-gradient(#ffffff26, #0000 40%), #cdbf96d9; clip-path: polygon(0 0, 3% 12%, 0 25%, 3% 38%, 0 50%, 3% 63%, 0 75%, 3% 88%, 0 100%, 100% 100%, 97% 88%, 100% 75%, 97% 63%, 100% 50%, 97% 38%, 100% 25%, 97% 12%, 100% 0); pointer-events: none; z-index: 1; }
-.ap2-figure[data-frame=tape] .ap2-image-wrap::before { left: calc(-30px * var(--u)); transform: rotate(-42deg); }
-.ap2-figure[data-frame=tape] .ap2-image-wrap::after { right: calc(-30px * var(--u)); transform: rotate(42deg); }
-/* Comic panel: heavy ink border with a white gutter. */
-.ap2-figure[data-frame=panel] .ap2-image-wrap { margin: calc(6px * var(--u)); border: calc(3px * var(--u)) solid #0a0a0a; border-radius: 0; box-shadow: 0 0 0 calc(6px * var(--u)) #fafafa; }
-/* Letterbox: black bars above and below. */
-.ap2-figure[data-frame=cinema] .ap2-image-wrap { padding: 6% 0; border-radius: calc(2px * var(--u)); background: #000; box-shadow: none; }
-/* Torn sheet: uneven deckle edge. */
-.ap2-figure[data-frame=torn] { filter: drop-shadow(0 calc(2px * var(--u)) calc(4px * var(--u)) #0008); }
-.ap2-figure[data-frame=torn] .ap2-image-wrap { padding: calc(15px * var(--u)); border-radius: 0; box-shadow: none; background: var(--ap2-grain), #f4f1e8;
-    clip-path: polygon(0.0% 0.5%,3.8% 0.2%,7.7% 1.0%,11.5% 0.1%,15.4% 0.8%,19.2% 0.5%,23.1% 0.1%,26.9% 0.8%,30.8% 0.1%,34.6% 0.7%,38.5% 0.1%,42.3% 0.1%,46.2% 0.6%,50.0% 1.2%,53.8% 0.2%,57.7% 0.3%,61.5% 0.9%,65.4% 1.4%,69.2% 0.9%,73.1% 0.6%,76.9% 1.5%,80.8% 0.1%,84.6% 1.3%,88.5% 0.4%,92.3% 0.2%,96.2% 0.2%,100.0% 0.5%,99.7% 2.9%,99.1% 5.9%,99.0% 8.8%,99.4% 11.8%,99.2% 14.7%,99.9% 17.6%,99.9% 20.6%,99.7% 23.5%,99.0% 26.5%,99.4% 29.4%,99.5% 32.4%,99.1% 35.3%,99.3% 38.2%,99.6% 41.2%,98.8% 44.1%,99.0% 47.1%,99.6% 50.0%,99.1% 52.9%,99.2% 55.9%,98.7% 58.8%,98.9% 61.8%,99.6% 64.7%,98.5% 67.6%,99.8% 70.6%,99.4% 73.5%,98.9% 76.5%,99.8% 79.4%,99.3% 82.4%,99.9% 85.3%,99.0% 88.2%,98.9% 91.2%,99.1% 94.1%,98.7% 97.1%,99.5% 100.0%,96.2% 99.1%,92.3% 99.1%,88.5% 99.3%,84.6% 98.7%,80.8% 98.6%,76.9% 99.3%,73.1% 99.0%,69.2% 99.9%,65.4% 98.9%,61.5% 99.0%,57.7% 98.5%,53.8% 98.8%,50.0% 99.6%,46.2% 99.4%,42.3% 99.0%,38.5% 100.0%,34.6% 99.3%,30.8% 99.7%,26.9% 99.8%,23.1% 99.9%,19.2% 98.8%,15.4% 99.8%,11.5% 99.6%,7.7% 99.4%,3.8% 98.7%,0.7% 100.0%,0.8% 97.1%,1.3% 94.1%,1.2% 91.2%,1.3% 88.2%,0.4% 85.3%,0.6% 82.4%,0.5% 79.4%,1.3% 76.5%,1.4% 73.5%,0.2% 70.6%,0.3% 67.6%,0.3% 64.7%,0.4% 61.8%,0.7% 58.8%,0.9% 55.9%,0.4% 52.9%,0.0% 50.0%,0.6% 47.1%,0.6% 44.1%,0.8% 41.2%,1.4% 38.2%,1.0% 35.3%,0.8% 32.4%,0.9% 29.4%,1.0% 26.5%,0.1% 23.5%,1.3% 20.6%,1.2% 17.6%,1.3% 14.7%,1.2% 11.8%,0.6% 8.8%,0.6% 5.9%,0.2% 2.9%); }
-.ap2-figure:not([data-frame=soft],[data-frame=none],[data-frame=panel]) .ap2-image-actions { top: calc(22px * var(--u)); right: calc(22px * var(--u)); }
-.ap2-figure[data-frame=film] .ap2-image-actions, .ap2-figure[data-frame=cinema] .ap2-image-actions { top: calc(32px * var(--u)); right: 10px; }
+/* Drawn frames: the ornament sits over the picture and spills outside it. */
+.ap2-figure[data-frame=art] .ap2-image-wrap, .ap2-figure[data-frame=image] .ap2-image-wrap { overflow: visible; border-radius: 0; box-shadow: none; }
+.ap2-ornament { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; pointer-events: none; }
+/* Image frames: the picture fills the frame's opening, the artwork lies on top. */
+.ap2-figure[data-frame=image] .ap2-image-open { -webkit-mask-size: 100% 100%; mask-size: 100% 100%; -webkit-mask-repeat: no-repeat; mask-repeat: no-repeat; }
+.ap2-figure[data-frame=image] .ap2-image-open > :is(img, .ap2-frame-sample) { width: 100%; height: 100%; object-fit: cover; aspect-ratio: auto; }
+.ap2-frame-art { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; cursor: default !important; }
+:is(.ap2-figure[data-frame=art], .ap2-figure[data-frame=image]) .ap2-image-actions { top: 12%; right: 12%; z-index: 1; }
 .ap2-frame-title { margin: 12px 0 6px; font-size: .86em; }
-.ap2-frame-picker { display: grid; grid-template-columns: repeat(auto-fill, minmax(76px, 1fr)); gap: 8px; margin-bottom: 10px; }
+.ap2-frame-picker { display: grid; grid-template-columns: repeat(auto-fill, minmax(84px, 1fr)); gap: 8px; margin-bottom: 10px; }
 .ap2-frame-choice { appearance: none; display: grid; gap: 6px; justify-items: center; align-content: space-between; min-width: 0; margin: 0; padding: 10px 6px 6px; border: 1px solid var(--ap2-border); border-radius: var(--ap2-radius); background: var(--ap2-soft); color: var(--ap2-muted); font: inherit; cursor: pointer; transition: border-color .12s, background .12s; }
 .ap2-frame-choice:hover { border-color: var(--ap2-border-strong); color: var(--ap2-fg); }
 .ap2-frame-choice[aria-checked=true] { border-color: var(--ap2-accent); background: var(--ap2-accent-soft); color: var(--ap2-fg); }
 .ap2-frame-choice:focus-visible { outline: 2px solid var(--ap2-accent); outline-offset: 2px; }
-.ap2-frame-choice .ap2-figure { --u: .34; display: block; width: 58px; margin: 0; }
-.ap2-frame-choice .ap2-image-wrap { display: block; border-radius: 3px; box-shadow: 0 1px 4px #0005; }
+.ap2-frame-choice .ap2-figure { --u: .34; display: block; width: 68px; margin: 0; }
+.ap2-frame-choice .ap2-image-wrap { display: block; position: relative; }
+.ap2-frame-choice .ap2-figure:is([data-frame=soft],[data-frame=none],[data-frame=line]) .ap2-image-wrap { border-radius: 3px; }
 .ap2-frame-choice .ap2-image-open { display: block; }
 .ap2-frame-sample { display: block; aspect-ratio: 4 / 5; background: radial-gradient(circle at 68% 30%, #f3dfa6 0 8%, #0000 9%), radial-gradient(130% 55% at 15% 112%, #2c4435 0 60%, #0000 61%), radial-gradient(120% 60% at 95% 122%, #3f6049 0 60%, #0000 61%), linear-gradient(#6f97b8, #e6c8a4 78%); }
 .ap2-frame-name { font-size: .72em; line-height: 1.2; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }

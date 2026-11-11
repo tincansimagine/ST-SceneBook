@@ -28,4 +28,4 @@ export function toggleCameraTag(camera,tag){
     const kept=tags(camera).filter(x=>!siblings.includes(x.toLowerCase()));
     return(on?kept:[tag,...kept]).join(', ');
 }
-export const FRAMES=[['soft','기본'],['none','없음'],['line','라인'],['polaroid','폴라로이드'],['film','필름'],['stamp','우표'],['corners','앨범'],['mat','액자'],['tape','테이프'],['panel','만화 컷'],['cinema','시네마'],['torn','찢은 종이']];
+export const FRAMES=[['soft','기본'],['none','없음'],['line','라인']];
