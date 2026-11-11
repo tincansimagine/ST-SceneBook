@@ -15,6 +15,8 @@ import { WorkQueue } from './src/queue.mjs';
 import { downloadChat } from './src/export.mjs';
 import { mergeRevision } from './src/revision.mjs';
 import { adoptEditedView } from './src/edited-view.mjs';
+import { orientation, sizeFor, FRAMES } from './src/framing.mjs';
+import { quickEdit } from './src/quick-edit.mjs';
 import { timelineInstruction,validateTimeline,resolveAt } from './src/timeline.mjs';
 import { el, button, notice, studio, composer, inspect, viewer, modal, mountSettings, compareVersions, confirmAction } from './src/ui.mjs';
 
@@ -38,9 +40,10 @@ function cleanSettings(value) {
     const c = Object.fromEntries(Object.keys(DEFAULTS).map(k => [k, value[k] ?? structuredClone(DEFAULTS[k])]));
     validateConfig(c);validateTemplate(c.analysisPrompt);validateInjectionTemplate(c.injectionPrompt);
     for (const [key,min,max] of [['maxScenes',1,6],['every',1,20],['sessionLimit',1,100],['contextMessages',0,30],['displayWidth',240,1200]]) number(c[key],min,max,key,true);
-    for (const key of ['quality','compact','budgetGuard','transparent','promptInjection','leanPrompt']) if(typeof c[key]!=='boolean')throw new Error(`${key}: 켜기/끄기 값이 필요합니다.`);
+    for (const key of ['quality','compact','budgetGuard','transparent','promptInjection','leanPrompt','autoSize']) if(typeof c[key]!=='boolean')throw new Error(`${key}: 켜기/끄기 값이 필요합니다.`);
     if(!['off','review','generate'].includes(c.automatic))throw new Error('자동 처리 설정을 확인하세요.');
     if(!['quick','precise'].includes(c.analysisMode))throw new Error('분석 모드를 확인하세요.');
+    if(!FRAMES.some(([id])=>id===c.frame))c.frame='soft';
     if(!['pov','visible','auto'].includes(c.playerMode)||!['inline','end'].includes(c.placement))throw new Error('표시 설정을 확인하세요.');
     for(const key of ['world','direction','profileId'])text(c[key],12000,key);
     if(!Array.isArray(c.library)||c.library.length>100)throw new Error('인물 라이브러리는 최대 100명입니다.');
@@ -91,7 +94,7 @@ async function resetVisual(where,expectedScope){
     }else throw new Error('해제할 범위를 확인하세요.');
     document.dispatchEvent(new CustomEvent('scenebook-visual-changed',{detail:{scope:where,contextKey:expectedScope}}));
 }
-function saveSettings(value) { const previous=settings();preserveSettings(context().extensionSettings,cleanSettings(value));context().saveSettingsDebounced();const current=settings();if(!workflowEnabled(current)){clearInjection();automatic.stop();queue.cancelWaiting(item=>item.automatic);}if(['compact','displayWidth','placement'].some(k=>previous[k]!==current[k]))scheduleRender();document.dispatchEvent(new Event('scenebook-settings-changed')); }
+function saveSettings(value) { const previous=settings();preserveSettings(context().extensionSettings,cleanSettings(value));context().saveSettingsDebounced();const current=settings();if(!workflowEnabled(current)){clearInjection();automatic.stop();queue.cancelWaiting(item=>item.automatic);}if(['compact','displayWidth','placement','frame'].some(k=>previous[k]!==current[k]))scheduleRender();document.dispatchEvent(new Event('scenebook-settings-changed')); }
 async function request(route, body, signal) {
     const response=await fetch(`/api/plugins/autopic2/${route}`,{method:body?'POST':'GET',headers:context().getRequestHeaders(),signal,...(body?{body:JSON.stringify(body)}:{})});
     if(route==='vertex'&&response.status===404)throw new Error('씬북 서버 플러그인을 0.4.2 이상으로 업데이트하고 SillyTavern을 재시작하세요.');
@@ -131,7 +134,7 @@ async function analysisRequest(config,prompt,length,options={}) {
     try{return await requestAnalysis(context(),ConnectionManagerRequestService,(payload,signal)=>request('vertex',payload,signal),config.profileId,prompt,length,options);}
     catch(e){throw new Error(analysisError(e),{cause:e});}
 }
-async function analyze(target,existing=[],direction='',revisionScope='all') {
+async function analyze(target,existing=[],direction='',revisionScope='all',persist=true) {
     if(!current(target))throw new Error('본문이 변경되었습니다. 해당 답변에서 다시 시작하세요.');
     const lock=`${target.scope}:${target.id}:${target.key}`;
     if(analysisLocks.has(lock))throw new Error('이 답변을 이미 분석 중입니다.');
@@ -159,12 +162,14 @@ async function analyze(target,existing=[],direction='',revisionScope='all') {
                     return compileCharacter(state?{...ch,outfit:state.outfit,profileId:state.profileId||ch.profileId}:ch,target.config.library,target.config.playerMode);
                 }).filter(Boolean)},target.config.model,target.snapshot.blocks.length);
                 if(existing.length&&!existing.some(x=>x.after===scene.after))throw new Error('부분 수정에서 삽입 위치가 바뀌었습니다.');
+                const size=orientation(input.size);if(size)scene.size=size;else if(existing[i]?.size)scene.size=existing[i].size;
                 accepted.push(existing.length?mergeRevision(existing[i],scene,revisionScope):scene);
             }catch(e){errors.push(`${i+1}번: ${e.message}`);if(existing[i])accepted.push(structuredClone(existing[i]));}
         }
         if(errors.length)notice(`분석 일부 제외: ${errors.join(' / ')}`,true);
         if(value.scenes.length&&!accepted.length)throw new Error('유효한 장면이 없습니다. 원문과 인물 설정을 확인하세요.');
         if(!current(target))throw new Error('분석 중 답변이 변경되었습니다. 새 답변에서 다시 시작하세요.');
+        if(!persist)return accepted;
         viewState(target).draft=accepted;viewState(target).draftConfig=generationConfig(target.config);if(timeline)viewState(target).timeline=timeline;await saveMessage(target);return accepted;
     }finally{progress.close();analysisLocks.delete(lock);updateBadge();}
 }
@@ -212,7 +217,9 @@ async function enqueue(target,scenes,slotId=null,overrideConfig=null) {
     }
     for(const [position,scene] of checked.entries()){
         const key=`${target.scope}:${target.id}:${target.key}:${slotId??`scene-${position}`}`;
-        const frozen=generationConfig(c),id=crypto.randomUUID();
+        // The plan may ask for a portrait, landscape or square canvas for this scene.
+        const shape=!overrideConfig&&settings().autoSize?orientation(scenes[position].size):'';
+        const frozen={...generationConfig(c),...(shape?sizeFor(c,shape):{})},id=crypto.randomUUID();
         const added=queue.add(key,async()=>{
             let progress;
             try{
@@ -271,7 +278,7 @@ function openIllustration(index,slot) {
     if(!viewState(target,false)?.slots.includes(slot)||slot.deleted)throw new Error('대상 답변이 바뀌었습니다. 이미지를 다시 열어 주세요.');
     const ensureCurrent=()=>{if(!current(target)||slot.deleted)throw new Error('대상 답변이 바뀌었습니다. 이미지를 다시 열어 주세요.');return context().chat.indexOf(target.message);};
     const dialog=viewer(job,{
-        actions:[{label:'삭제',icon:'fa-trash-can',danger:true,run:async()=>{if(await deleteIllustration(target,slot))dialog.close();}}],
+        actions:[{label:'수정',icon:'fa-pen',close:true,run:()=>{ensureCurrent();return openQuickEdit(index,slot);}},{label:'삭제',icon:'fa-trash-can',danger:true,run:async()=>{if(await deleteIllustration(target,slot))dialog.close();}}],
         more:[
             {label:'AI 검수',icon:'fa-magnifying-glass',run:()=>reviewImage(job)},
             {label:'생성 기록',icon:'fa-file-lines',run:()=>inspect(job)},
@@ -279,6 +286,16 @@ function openIllustration(index,slot) {
             {label:'같은 시드로 생성',icon:'fa-rotate-right',run:()=>{ensureCurrent();return enqueue(target,[job.scene],slot.id,{...job.config,seed:job.seed});}},
             {label:'기본 시드로 저장',icon:'fa-thumbtack',run:()=>{saveSettings({...settings(),seed:job.seed});notice(`Seed ${job.seed} 저장됨`);}},
         ],
+    });
+}
+function openQuickEdit(index,slot) {
+    const target=capture(index),job=slot.versions[slot.selected];
+    if(!viewState(target,false)?.slots.includes(slot)||slot.deleted)throw new Error('대상 답변이 바뀌었습니다. 이미지를 다시 열어 주세요.');
+    const check=()=>{if(!current(target)||slot.deleted)throw new Error('대상 답변이 바뀌었습니다. 이미지를 다시 열어 주세요.');};
+    quickEdit({scene:job.scene,
+        onRewrite:async(scene,request)=>{check();return(await analyze(target,[{...scene,after:Math.min(scene.after,target.snapshot.blocks.length)}],request,'all',false))[0];},
+        onGenerate:(scene,size)=>{check();return enqueue(target,[scene],slot.id,{...job.config,seed:-1,...(size?sizeFor(job.config,size):{})});},
+        onDetail:scene=>{check();return compose(index,true,[scene],slot.id,{...job.config,seed:job.seed});},
     });
 }
 function renderMessage(index) {
@@ -292,7 +309,7 @@ function renderMessage(index) {
         open.addEventListener('click',run);open.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();void run();}});menu.prepend(open);
     }
     const state=m.extra?.[KEY]?.views?.[sourceKey(m.mes,m.swipe_id??0)],config=settings();
-    const signature=JSON.stringify([index,m.mes,m.swipe_id,state,config.compact,config.displayWidth,config.placement]);
+    const signature=JSON.stringify([index,m.mes,m.swipe_id,state,config.compact,config.displayWidth,config.placement,config.frame]);
     const previous=rendered.get(content);
     if(previous?.signature===signature&&previous.nodes.every(n=>n.isConnected))return;
     block.querySelectorAll('.ap2-tools,.ap2-figure').forEach(x=>x.remove());
@@ -302,16 +319,16 @@ function renderMessage(index) {
     for(const slot of state.slots??[]){
         if(slot.hidden||slot.deleted)continue;
         const job=slot.versions?.[slot.selected];if(!job||!safeImagePath(job.url))continue;
-        const figure=el('figure','ap2-figure');figure.style.maxWidth=`${config.compact?Math.min(360,config.displayWidth):config.displayWidth}px`;
+        const figure=el('figure','ap2-figure');figure.dataset.frame=config.frame;figure.style.maxWidth=`${config.compact?Math.min(360,config.displayWidth):config.displayWidth}px`;
         const image=el('img');image.src=job.url;image.alt=job.scene.title;image.loading='lazy';image.width=job.config.width;image.height=job.config.height;
         const imageWrap=el('div','ap2-image-wrap'),overlay=el('div','ap2-image-actions');
         overlay.setAttribute('aria-label','삽화 도구');
         const open=button('',()=>openIllustration(index,slot));open.className='ap2-image-open';open.setAttribute('aria-label',`${job.scene.title} · 이미지 보기`);open.replaceChildren(image);
         const targetForImage=()=>{const target=capture(index);if(!viewState(target,false)?.slots.includes(slot)||slot.deleted)throw new Error('대상 답변이 바뀌었습니다.');return target;};
         for(const [label,icon,action]of [
-            ['설정','fa-gear',()=>{targetForImage();return compose(index,true,[job.scene],slot.id,{...job.config,seed:job.seed});}],
+            ['수정','fa-pen',()=>{targetForImage();return openQuickEdit(index,slot);}],
             ['재생성','fa-rotate-right',()=>enqueue(targetForImage(),[job.scene],slot.id,{...job.config,seed:-1})],
-        ]){const b=button('',action,false,icon);b.title=label==='재생성'?'새 시드로 재생성':'프롬프트·배치 편집';b.setAttribute('aria-label',label);overlay.append(b);}
+        ]){const b=button('',action,false,icon);b.title=label==='재생성'?'새 시드로 재생성':'장면을 고쳐서 재생성';b.setAttribute('aria-label',label);overlay.append(b);}
         imageWrap.append(open,overlay);figure.append(imageWrap);
         if(slot.versions.length>1){
             const change=async delta=>{const target=targetForImage();slot.selected=(slot.selected+delta+slot.versions.length)%slot.versions.length;await saveMessage(target);};

@@ -4,7 +4,8 @@ import { sceneBundle, readSceneBundle } from './editor-data.mjs';
 import { showGuide } from './guide.mjs';
 import { generationEditor } from './generation-ui.mjs';
 import { paragraphPosition } from './paragraph-ui.mjs';
-import { el, button, field, addField, readFields, modal, notice, confirmAction, downloadJson, actionMenu } from './ui.mjs';
+import { ORIENTATIONS } from './framing.mjs';
+import { el, button, field, addField, readFields, modal, notice, confirmAction, downloadJson, actionMenu, segmented } from './ui.mjs';
 
 export function composer({context,scenes,config,onAnalyze,onGenerate,onDraft,previewUrl}){
     const {dialog,body}=modal('장면 편집');dialog.classList.add('ap2-editor');
@@ -34,7 +35,7 @@ export function composer({context,scenes,config,onAnalyze,onGenerate,onDraft,pre
     input.addEventListener('change',async()=>{try{const file=input.files?.[0];if(!file)return;if(file.size>300000)throw new Error('300KB 이하 장면 파일을 선택하세요.');const value=readSceneBundle(JSON.parse(await file.text()),config,context.blocks.at(-1).index);snapshot();drafts=value.scenes;Object.assign(config,value.config);selected=person=0;render();notice('장면을 불러왔습니다.');}catch(e){notice(e.message,true);}finally{input.value='';}});
     const save=button('초안 저장',async()=>{await onDraft(drafts);dirty=false;status.textContent='초안 저장됨';},false,'fa-floppy-disk');
     const generate=button('생성',async()=>{await onGenerate(drafts);dirty=false;dialog.close();},true,'fa-wand-magic-sparkles');primary.append(save,generate);
-    const headerClose=dialog.querySelector('.ap2-header button'),headerActions=el('div','ap2-actions ap2-header-actions');headerActions.append(button('설정',()=>generationEditor(config,next=>{for(const s of drafts)if(s.characters.length>MODELS[next.model].characters)throw new Error(`이 모델은 인물 ${MODELS[next.model].characters}명까지 지원합니다.`);snapshot();Object.assign(config,next);render();}),false,'fa-sliders'),(()=>{const b=iconButton('닫기','fa-xmark',()=>closeEditor());b.classList.add('ap2-close');return b;})());headerClose.replaceWith(headerActions);
+    const headerClose=dialog.querySelector('.ap2-header button'),headerActions=el('div','ap2-actions ap2-header-actions');headerActions.append(button('설정',()=>generationEditor(config,next=>{for(const s of drafts)if(s.characters.length>MODELS[next.model].characters)throw new Error(`이 모델은 인물 ${MODELS[next.model].characters}명까지 지원합니다.`);snapshot();if(next.width!==config.width||next.height!==config.height)for(const s of drafts)delete s.size;Object.assign(config,next);render();}),false,'fa-sliders'),(()=>{const b=iconButton('닫기','fa-xmark',()=>closeEditor());b.classList.add('ap2-close');return b;})());headerClose.replaceWith(headerActions);
     async function closeEditor(){if(editing)return;editing=true;try{if(dirty){const {dialog:ask,body:askBody}=modal('편집 내용');ask.classList.add('ap2-compact');askBody.append(el('p','','저장하지 않은 변경 사항이 있습니다.'));const f=el('footer','ap2-footer');f.append(button('계속 편집',()=>ask.close()),button('저장 없이 닫기',()=>{ask.close();dirty=false;dialog.close();}),button('저장 후 닫기',async()=>{await onDraft(drafts);ask.close();dirty=false;dialog.close();},true));ask.append(f);await new Promise(resolve=>ask.addEventListener('close',resolve,{once:true}));}else dialog.close();}finally{editing=false;}}
     dialog.addEventListener('cancel',e=>{e.preventDefault();void closeEditor();});
     // This editor deliberately ignores backdrop clicks: an accidental click must not discard a draft.
@@ -53,6 +54,7 @@ export function composer({context,scenes,config,onAnalyze,onGenerate,onDraft,pre
     function bind(parent,key,label,options={}){const f=field(label,scene()[key],options);parent.append(f.wrap);f.input.addEventListener('input',()=>{scene()[key]=f.read();});return f;}
     function renderScene(){
         if(config.placement==='inline')content.append(paragraphPosition(context.blocks,Number(scene().after),index=>{snapshot();scene().after=index;scene().evidence=context.blocks.find(block=>block.index===index)?.content.slice(0,2000)??'';undoButton.disabled=false;}));
+        const shape=segmented('화면 비율',ORIENTATIONS,scene().size??'',value=>{snapshot();if(value)scene().size=value;else delete scene().size;undoButton.disabled=false;}),shapeRow=el('div','ap2-quick-shape');shapeRow.append(el('span','','화면 비율'),shape.wrap);content.append(shapeRow);
         bind(content,'prompt','장면 프롬프트',{multiline:true,rows:5,placeholder:'배경, 조명, 장면의 시각적 상황을 입력하세요.'});
         if(scene().finalPrompt){const exact=field('최종 프롬프트 직접 사용',true,{type:'checkbox',help:'이 장면에는 공통 그림체·구도·품질 태그를 덧붙이지 않습니다.'});exact.input.addEventListener('input',()=>{scene().finalPrompt=exact.read();});content.append(exact.wrap);}
         const row=el('div','ap2-grid');content.append(row);bind(row,'camera','구도',{multiline:true,rows:3});bind(row,'negative','장면 제외 요소',{multiline:true,rows:3});

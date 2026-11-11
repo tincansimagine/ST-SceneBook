@@ -1,5 +1,6 @@
 import { parsePlanJson, JSON_OUTPUT_RULES } from './plan-json.mjs';
 import { parsePlanText } from './plan-text.mjs';
+import { orientation } from './framing.mjs';
 import { MODELS, text, normalizeScene } from '../plugin/core.mjs';
 import { narrativeBlocks, illustrationBlocks, scenePosition, compileCharacter } from './context.mjs';
 
@@ -13,7 +14,7 @@ Each image is one frozen instant in this reply. Keep clothing, actions and other
 
 Build each moment in this order:
 1. Determine the visible participants and the object or contact that makes the event understandable. Keep both sides of an exchange when visible; never drop the receiver while retaining a handover. Anonymous background activity belongs in the environment. If the required cast cannot fit the model limit, select a coherent different moment.
-2. camera contains only framing, viewpoint and crop. Choose a readable view of the focal action. Avoid contradictory angles and automatic close-ups. Use differences in distance, overlap or foreground framing when useful, without forcing decorative staging or hiding essential action.
+2. camera: decide where the viewer must stand so that the key action and each participant's face or point of contact are actually visible, then choose the shot size that fits them. Write one viewpoint tag and one shot tag. Two people embracing, kissing, shaking hands or facing each other read best from side, with both profiles visible. People lying down or sleeping together, or things spread on a bed, floor or table, read best from above. Someone walking away, gazing at a view or showing their back reads from behind; a looming or towering figure from below; one person's expression or a small object as a front close-up; a large place or a group as a wide shot. Do not default to a front view, and never choose an angle that hides the main action: a hug seen from behind or from above shows nothing. Viewpoint tags: from side, from above, from below, from behind, straight-on, pov. Shot tags: close-up, upper body, cowboy shot, full body, wide shot. camera holds only viewpoint, shot size and crop. size is the canvas shape that fits that composition: portrait for standing or single figures, landscape for people lying down, side-by-side groups or wide scenery, square for a close two-person shot.
 3. prompt contains the featured count, environment, relevant props, time, weather and shared lighting. Turn setting-specific names into established visible features. Put individual appearance, clothes, expression and actions in the corresponding character entry, not the shared prompt. Describe atmosphere through visible light and space, not abstract emotions or plot summaries.
 4. For a registered character, copy the exact name from the supplied library. The extension appends their saved appearance verbatim; omit appearance instead of duplicating or rewriting it. profile may only name an existing profile id. For an unregistered character, omit profile and provide appearance with their established visible identity, hair, eyes, build and other distinguishing traits. Do not invent distinctive details to fill blanks. Names are lookup labels, never image descriptions.
 5. Omit outfit when the saved default still applies. When it changed, provide the complete currently visible outfit, not an instruction such as 'keep the same'. Respect explicit clothing changes at this moment; omission of clothes in prose does not imply removal. Do not carry later changes into earlier images or invent cropped-out garments.
@@ -28,7 +29,8 @@ REFERENCE={{data}}
 Append the plan after the story, on separate lines, in exactly this plain-text layout: one field per line as key: value. No JSON, braces, quotes around values or markdown fence. Start every scene with a line containing only the word scene. Write the comment markers literally, without backslashes.
 <!--scenebook
 scene
-camera: English framing and viewpoint
+camera: viewpoint tag, shot tag
+size: portrait
 prompt: English shared visual scene
 char: exact character name
 action: English visible action and relative position
@@ -40,7 +42,8 @@ Repeat the char, action and pos lines for each featured character, and repeat th
 export const LEAN_INJECTION_PROMPT = `After the normal reply, append ONE illustration plan for this reply inside a literal <!--scenebook ... --> comment. The plan is required in every reply; the extension removes earlier plans from the chat, so their absence is expected. Never skip it or leave it empty. For a quiet moment, show the current interaction or the established setting.
 
 Plan 1 scene (at most {{maxScenes}} when the moments clearly differ). Each scene is one frozen instant of this reply and uses only established visible facts.
-- camera: framing and viewpoint only.
+- camera: one viewpoint tag and one shot tag, chosen so the key action and both faces or the point of contact are visible. Embrace, kiss or face-to-face: from side. Lying or sleeping together: from above. Walking away or looking at a view: from behind. Looming figure: from below. Never use an angle that hides the action; a hug from behind or above shows nothing. Tags: from side, from above, from below, from behind, straight-on, pov; close-up, upper body, cowboy shot, full body, wide shot.
+- size: portrait (standing or single figure), landscape (lying down, side by side, scenery) or square (close two-person shot).
 - prompt: visible character count, location, relevant props, time and lighting. No individual appearance.
 - char: the exact name from the library. Saved appearance is added automatically; do not repeat it. For an unregistered character add an appearance line with hair, eyes, build and distinguishing traits.
 - action: that character's pose, expression, gaze and contact; refer to others by a short visible feature, not a name.
@@ -54,7 +57,8 @@ REFERENCE={{data}}
 Layout: one key: value field per line, each scene opened by a line reading scene. No JSON, quotes, titles, numbering or code fence.
 <!--scenebook
 scene
-camera: English framing and viewpoint
+camera: viewpoint tag, shot tag
+size: portrait
 prompt: English shared visual scene
 char: exact character name
 action: English visible action
@@ -173,7 +177,9 @@ export function injectedScenes(value, source, config, {onInvalid} = {}) {
         if(!Array.isArray(raw.characters??[]))throw new Error('인물 목록을 읽을 수 없습니다.');
         if((raw.characters?.length??0)>MODELS[config.model].characters)throw new Error(`이 모델의 인물 한도는 ${MODELS[config.model].characters}명입니다.`);
         const positioned=scenePosition(raw,{blocks},config.placement);
-        return normalizeScene({ ...positioned, finalPrompt: false, characters: (raw.characters ?? []).map(c => compileCharacter(c, config.library, config.playerMode)).filter(Boolean) }, config.model, Math.max(1,blocks.length));
+        const scene=normalizeScene({ ...positioned, finalPrompt: false, characters: (raw.characters ?? []).map(c => compileCharacter(c, config.library, config.playerMode)).filter(Boolean) }, config.model, Math.max(1,blocks.length)),size=orientation(raw.size);
+        if(size)scene.size=size;
+        return scene;
     };
     for(const [index,raw]of value.scenes.entries()){
         try{

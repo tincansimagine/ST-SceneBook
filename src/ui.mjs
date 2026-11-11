@@ -6,6 +6,7 @@ import { imageImport } from './import-ui.mjs';
 import { promptEditor } from './prompt-ui.mjs';
 import { notice,placeNotices } from './notifications.mjs';
 import { workflowEnabled } from './automatic.mjs';
+import { FRAMES } from './framing.mjs';
 export { notice } from './notifications.mjs';
 export { composer } from './editor.mjs';
 
@@ -148,6 +149,7 @@ export function studio(api,host=null) {
             const sizes=el('div','ap2-size-presets');
             for(const [label,w,h]of [['세로',832,1216],['정사각',1024,1024],['가로',1216,832]])sizes.append(button(label,()=>{fields.width.input.value=w;fields.height.input.value=h;page.dispatchEvent(new Event('input',{bubbles:true}));}));
             image.append(sizes);
+            addField(image,fields,'autoSize','장면에 맞춰 세로·가로 전환',c.autoSize,{type:'checkbox',help:'누운 장면은 가로, 서 있는 장면은 세로처럼 AI가 장면마다 화면 비율을 고릅니다. 픽셀 수는 위 설정과 비슷하게 유지합니다.'});
             const sampling=el('div','ap2-grid');image.append(sampling);
             addField(sampling,fields,'steps','Steps',c.steps,{type:'number',min:1,max:50,step:1});
             addField(sampling,fields,'scale','Guidance',c.scale,{type:'number',min:0,max:10,step:0.1});
@@ -183,6 +185,14 @@ export function studio(api,host=null) {
             addField(display,fields,'placement','삽입 위치',c.placement,{choices:[['end','답변 아래'],['inline','문단 뒤']]});
             addField(display,fields,'displayWidth','최대 너비',c.displayWidth,{type:'number',min:240,max:1200,step:1});
             addField(display,fields,'compact','작게 표시',c.compact,{type:'checkbox'});
+            // Frame styles are previewed with the same CSS the chat uses.
+            let frame=c.frame;const frames=el('div','ap2-frame-picker');frames.setAttribute('role','radiogroup');frames.setAttribute('aria-label','삽화 테두리');
+            for(const [id,label]of FRAMES){
+                const choice=el('button','ap2-frame-choice');choice.type='button';choice.setAttribute('role','radio');choice.setAttribute('aria-checked',String(id===frame));
+                const sample=el('span','ap2-figure');sample.dataset.frame=id;const wrap=el('span','ap2-image-wrap');wrap.append(el('span','ap2-frame-sample'));sample.append(wrap);choice.append(sample,el('span','ap2-frame-name',label));
+                choice.addEventListener('click',()=>{frame=id;for(const b of frames.children)b.setAttribute('aria-checked',String(b===choice));page.dispatchEvent(new Event('input'));});frames.append(choice);
+            }
+            fields.frame={read:()=>frame};display.append(el('p','ap2-frame-title','삽화 테두리'),frames);
             saveBar(page,()=>api.saveSettings({...api.settings(),...readFields(fields)}));
             const presets=settingGroup(page,'프리셋 · 백업',true);
             const presetName=field('이름','');presets.append(presetName.wrap);
@@ -388,7 +398,7 @@ export function compareVersions(versions,currentIndex){
 export function mountSettings(api,container){
     const drawer=el('div','inline-drawer');drawer.id='ap2-settings';
     const header=el('div','inline-drawer-toggle inline-drawer-header');header.tabIndex=0;header.setAttribute('role','button');header.setAttribute('aria-expanded','false');header.setAttribute('aria-controls','ap2-settings-content');
-    const label=el('b','ap2-drawer-title','씬북'),version=el('small','ap2-version','0.4.21'),status=el('small','ap2-muted','');status.id='ap2-status';label.append(version);
+    const label=el('b','ap2-drawer-title','씬북'),version=el('small','ap2-version','0.4.22'),status=el('small','ap2-muted','');status.id='ap2-status';label.append(version);
     const icon=el('div','inline-drawer-icon fa-solid fa-circle-chevron-down down');icon.setAttribute('aria-hidden','true');header.append(label,status,icon);
     const content=el('div','inline-drawer-content ap2-settings');content.id='ap2-settings-content';content.style.display='none';
     drawer.append(header,content);container.append(drawer);
