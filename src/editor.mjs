@@ -10,17 +10,16 @@ export function composer({context,scenes,config,onAnalyze,onGenerate,onDraft,pre
     const {dialog,body}=modal('장면 편집');dialog.classList.add('ap2-editor');
     let drafts=structuredClone(scenes),selected=0,person=0,tab='scene',dirty=false,editing=false;
     const undo=[];const snapshot=()=>{undo.push({drafts:structuredClone(drafts),config:structuredClone(config),selected,person});if(undo.length>20)undo.shift();dirty=true;};
-    const toolbar=el('div','ap2-editor-toolbar'),sceneSelect=field('장면','',{choices:[]}),title=field('제목',''),tools=el('div','ap2-actions');
+    const toolbar=el('div','ap2-editor-toolbar'),sceneSelect=field('장면','',{choices:[]}),tools=el('div','ap2-actions');
     const iconButton=(label,icon,fn)=>{const b=button('',fn,false,icon);b.setAttribute('aria-label',label);b.title=label;b.classList.add('ap2-icon-button');return b;};
-    toolbar.append(sceneSelect.wrap,title.wrap,tools);body.append(toolbar);
+    toolbar.append(sceneSelect.wrap,tools);body.append(toolbar);
     const scene=()=>drafts[selected];
     const moveScene=delta=>{const to=selected+delta;if(to<0||to>=drafts.length)return;snapshot();[drafts[selected],drafts[to]]=[drafts[to],drafts[selected]];selected=to;render();};
     const sceneBack=iconButton('장면 앞으로','fa-arrow-left',()=>moveScene(-1)),sceneNext=iconButton('장면 뒤로','fa-arrow-right',()=>moveScene(1));
-    const addScene=button('추가',()=>{if(drafts.length>=config.maxScenes)throw new Error(`최대 ${config.maxScenes}개 장면입니다.`);snapshot();drafts.push({title:'새 장면',prompt:'',camera:'',negative:'',after:context.blocks.at(-1).index,evidence:'',characters:[]});selected=drafts.length-1;person=0;render();},false,'fa-plus');
-    const deleteScene=iconButton('장면 삭제','fa-trash-can',async()=>{const target=scene();if(!target||!await confirmAction('장면 삭제',`“${target.title||'이 장면'}”을 삭제할까요? 되돌리기로 복구할 수 있습니다.`))return;snapshot();drafts.splice(selected,1);selected=Math.max(0,selected-1);person=0;render();});
+    const addScene=button('추가',()=>{if(drafts.length>=config.maxScenes)throw new Error(`최대 ${config.maxScenes}개 장면입니다.`);snapshot();drafts.push({title:`장면 ${drafts.length+1}`,prompt:'',camera:'',negative:'',after:context.blocks.at(-1).index,evidence:'',characters:[]});selected=drafts.length-1;person=0;render();},false,'fa-plus');
+    const deleteScene=iconButton('장면 삭제','fa-trash-can',async()=>{const target=scene();if(!target||!await confirmAction('장면 삭제',`장면 ${selected+1}을 삭제할까요? 되돌리기로 복구할 수 있습니다.`))return;snapshot();drafts.splice(selected,1);selected=Math.max(0,selected-1);person=0;render();});
     tools.append(sceneBack,sceneNext,addScene,deleteScene);
     sceneSelect.input.addEventListener('change',()=>{selected=Number(sceneSelect.read());person=0;render();});
-    title.input.addEventListener('input',()=>{if(scene()){scene().title=title.read();sceneSelect.input.options[selected].textContent=`${selected+1}. ${title.read()||'새 장면'}`;dirty=true;}});
     const nav=el('div','ap2-editor-tabs'),content=el('div','ap2-editor-content'),status=el('p','ap2-muted');status.setAttribute('role','status');nav.setAttribute('aria-label','장면 편집 항목');
     for(const [key,label]of [['scene','장면'],['cast','인물·배치'],['final','프롬프트']]){const b=button(label,()=>{tab=key;renderContent();});b.classList.remove('menu_button','menu_button_icon');b.dataset.tab=key;nav.append(b);}
     dialog.querySelector('.ap2-header-title').append(status);body.append(nav,content);
@@ -43,7 +42,7 @@ export function composer({context,scenes,config,onAnalyze,onGenerate,onDraft,pre
     body.addEventListener('input',()=>{dirty=true;});
     function render(){
         selected=Math.max(0,Math.min(selected,drafts.length-1));sceneSelect.input.replaceChildren();
-        drafts.forEach((s,i)=>{const o=el('option','',`${i+1}. ${s.title||'새 장면'}`);o.value=i;sceneSelect.input.append(o);});sceneSelect.input.value=selected;sceneSelect.wrap.hidden=drafts.length<2;sceneBack.hidden=sceneNext.hidden=drafts.length<2;title.input.value=scene()?.title??'';title.input.disabled=!scene();
+        drafts.forEach((s,i)=>{const o=el('option','',`장면 ${i+1} / ${drafts.length}`);o.value=i;sceneSelect.input.append(o);});sceneSelect.input.value=selected;sceneSelect.wrap.hidden=!drafts.length;sceneBack.hidden=sceneNext.hidden=drafts.length<2;
         sceneBack.disabled=selected===0||!drafts.length;sceneNext.disabled=selected>=drafts.length-1;deleteScene.disabled=!scene();undoButton.disabled=!undo.length;generate.disabled=!drafts.length;renderContent();
     }
     function renderContent(){

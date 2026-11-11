@@ -356,3 +356,4 @@ details.ap2-group[open] > summary { border-bottom-left-radius: 0; border-bottom-
     :is(#ap2-settings,.ap2-dialog,.ap2-figure,.ap2-action-panel) * { transition: none !important; }
 }
 .ap2-footer:empty { display: none; }
+.mes_button.ap2-mes-button { cursor: pointer; }

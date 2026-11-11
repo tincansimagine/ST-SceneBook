@@ -160,6 +160,7 @@ export function studio(api,host=null) {
             const prompts=settingGroup(page,'프롬프트',true);
             addField(prompts,fields,'style','메인 프롬프트',c.style,{multiline:true});
             addField(prompts,fields,'negative','UC 프롬프트',c.negative,{multiline:true,rows:2});
+            addField(prompts,fields,'leanPrompt','간결한 삽화 지시문',c.leanPrompt,{type:'checkbox',help:'대화 AI에 매번 보내는 삽화 지시문을 짧은 버전으로 바꿔 입력 토큰을 줄입니다. 삽화 지시가 자주 빠지면 끄세요.'});
             prompts.append(button('편집 · 공유',()=>promptEditor({...api.settings(),...readFields(fields)},value=>{for(const key of ['style','negative'])fields[key].input.value=value[key];fields.quality.input.checked=value.quality;for(const key of ['analysisPrompt','injectionPrompt'])fields[key]={read:()=>value[key]};api.saveSettings({...api.settings(),...value});}),false,'fa-pen'));
             const automatic=settingGroup(page,'자동 생성 한도',true);
             const limits=el('div','ap2-grid');automatic.append(limits);
@@ -387,7 +388,7 @@ export function compareVersions(versions,currentIndex){
 export function mountSettings(api,container){
     const drawer=el('div','inline-drawer');drawer.id='ap2-settings';
     const header=el('div','inline-drawer-toggle inline-drawer-header');header.tabIndex=0;header.setAttribute('role','button');header.setAttribute('aria-expanded','false');header.setAttribute('aria-controls','ap2-settings-content');
-    const label=el('b','ap2-drawer-title','씬북'),version=el('small','ap2-version','0.4.20'),status=el('small','ap2-muted','');status.id='ap2-status';label.append(version);
+    const label=el('b','ap2-drawer-title','씬북'),version=el('small','ap2-version','0.4.21'),status=el('small','ap2-muted','');status.id='ap2-status';label.append(version);
     const icon=el('div','inline-drawer-icon fa-solid fa-circle-chevron-down down');icon.setAttribute('aria-hidden','true');header.append(label,status,icon);
     const content=el('div','inline-drawer-content ap2-settings');content.id='ap2-settings-content';content.style.display='none';
     drawer.append(header,content);container.append(drawer);

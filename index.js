@@ -38,7 +38,7 @@ function cleanSettings(value) {
     const c = Object.fromEntries(Object.keys(DEFAULTS).map(k => [k, value[k] ?? structuredClone(DEFAULTS[k])]));
     validateConfig(c);validateTemplate(c.analysisPrompt);validateInjectionTemplate(c.injectionPrompt);
     for (const [key,min,max] of [['maxScenes',1,6],['every',1,20],['sessionLimit',1,100],['contextMessages',0,30],['displayWidth',240,1200]]) number(c[key],min,max,key,true);
-    for (const key of ['quality','compact','budgetGuard','transparent','promptInjection']) if(typeof c[key]!=='boolean')throw new Error(`${key}: 켜기/끄기 값이 필요합니다.`);
+    for (const key of ['quality','compact','budgetGuard','transparent','promptInjection','leanPrompt']) if(typeof c[key]!=='boolean')throw new Error(`${key}: 켜기/끄기 값이 필요합니다.`);
     if(!['off','review','generate'].includes(c.automatic))throw new Error('자동 처리 설정을 확인하세요.');
     if(!['quick','precise'].includes(c.analysisMode))throw new Error('분석 모드를 확인하세요.');
     if(!['pov','visible','auto'].includes(c.playerMode)||!['inline','end'].includes(c.placement))throw new Error('표시 설정을 확인하세요.');
@@ -284,6 +284,13 @@ function openIllustration(index,slot) {
 function renderMessage(index) {
     const c=context(),m=c.chat[index];if(!c.getCurrentChatId()||!m||m.is_user||m.is_system)return;
     const block=document.querySelector(`#chat .mes[mesid="${index}"]`),content=block?.querySelector('.mes_text');if(!content)return;
+    // One button per reply opens the scene editor for that reply.
+    const menu=block.querySelector('.extraMesButtons')??block.querySelector('.mes_buttons');
+    if(menu&&!menu.querySelector('.ap2-mes-button')){
+        const open=el('div','mes_button ap2-mes-button fa-solid fa-panorama');open.title='씬북 · 이 답변의 장면 편집';open.tabIndex=0;open.setAttribute('role','button');open.setAttribute('aria-label',open.title);
+        const run=async()=>{try{await compose(Number(block.getAttribute('mesid')));}catch(e){notice(e.message,true);}};
+        open.addEventListener('click',run);open.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();void run();}});menu.prepend(open);
+    }
     const state=m.extra?.[KEY]?.views?.[sourceKey(m.mes,m.swipe_id??0)],config=settings();
     const signature=JSON.stringify([index,m.mes,m.swipe_id,state,config.compact,config.displayWidth,config.placement]);
     const previous=rendered.get(content);
