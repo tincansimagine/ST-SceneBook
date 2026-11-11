@@ -209,12 +209,12 @@ details.ap2-group[open] { padding-bottom: 10px; }
 .ap2-figure:hover .ap2-image-actions, .ap2-figure:focus-within .ap2-image-actions { opacity: 1; }
 .ap2-figure .ap2-image-actions .ap2-button { width: 34px; min-height: 34px; padding: 0; border-radius: 50%; background: #000000a6; color: #fff; backdrop-filter: blur(8px); }
 .ap2-figure .ap2-image-actions .ap2-button:hover { background: #000000d9; }
-/* Touch screens have no hover: every action is in the viewer instead. */
-@media (hover: none) { .ap2-image-actions { display: none; } }
-.ap2-image-navigation { display: flex; justify-content: center; align-items: center; gap: 4px; margin-top: 6px; color: var(--ap2-muted); }
-.ap2-figure .ap2-image-navigation .ap2-button { width: 32px; min-height: 28px; padding: 0; background: none; color: inherit; font-size: .72em; }
+/* Touch screens have no hover: keep the two buttons visible, small and translucent. */
+@media (hover: none) { .ap2-image-actions { opacity: 1; } .ap2-figure .ap2-image-actions .ap2-button { width: 34px; min-height: 34px; background: #00000080; } }
+.ap2-image-navigation { display: flex; justify-content: flex-end; align-items: center; gap: 0; margin-top: 2px; color: var(--ap2-muted); }
+.ap2-figure .ap2-image-navigation .ap2-button { width: 30px; min-height: 28px; padding: 0; border-radius: 8px; background: none; color: inherit; font-size: .7em; }
 .ap2-figure .ap2-image-navigation .ap2-button:hover { background: var(--ap2-1); color: var(--ap2-fg); }
-.ap2-version-count { min-width: 30px; text-align: center; font-size: .78em; font-variant-numeric: tabular-nums; }
+.ap2-version-count { min-width: 26px; text-align: center; font-size: .74em; font-variant-numeric: tabular-nums; }
 
 /* Character placement board. */
 .ap2-placement { margin: 10px 0; }
@@ -326,7 +326,7 @@ details.ap2-group[open] { padding-bottom: 10px; }
     #ap2-settings, .ap2-dialog, .ap2-figure, .ap2-action-panel { --ap2-h: 42px; }
     .ap2-group > summary, .ap2-character > summary, .ap2-guide-topic > summary { min-height: 50px; }
     .ap2-chip-button { min-height: 38px; }
-    .ap2-figure .ap2-image-navigation .ap2-button { width: 44px; min-height: 36px; }
+    .ap2-figure .ap2-image-navigation .ap2-button { width: 36px; min-height: 32px; }
 }
 @media (max-width: 650px) {
     /* Dialogs fill the screen; small prompts and menus rise from the bottom. */

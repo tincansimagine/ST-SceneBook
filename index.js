@@ -265,7 +265,8 @@ async function compose(index=lastIndex(),manual=true,initial=null,slotId=null,re
     const embedded=stored?.value??extractInjectedPlan(target.snapshot.source).value;
     const scenes=initial??(saved.length?saved:manual?(embedded?injectedScenes(embedded,target.snapshot.source,target.config):[{title:'새 장면',prompt:'',after:target.snapshot.blocks.at(-1).index,characters:[]}]):await analyze(target));
     if(stored?.value&&stored!==state.injected)state.injected=stored;
-    const slot=viewState(target).slots.find(x=>x.id===slotId),previewUrl=slot?.versions?.[slot.selected]?.url;
+    // Show the picture being edited behind the placement board; without a specific one, the reply's first picture.
+    const slots=viewState(target).slots,slot=slots.find(x=>x.id===slotId)??slots.find(x=>!x.deleted&&!x.hidden&&x.versions?.length),previewUrl=slot?.versions?.[slot.selected]?.url;
     composer({context:target.snapshot,scenes,config:target.config,previewUrl,onAnalyze:(old,direction,scope)=>analyze(target,old,direction,scope),onGenerate:s=>enqueue(target,s,slotId),onDraft:async s=>{if(!current(target))throw new Error('편집 중 채팅이 변경됐습니다. 다시 열어 주세요.');viewState(target).draft=s;viewState(target).draftConfig=generationConfig(target.config);await saveMessage(target);}});
 }
 function updateBadge() {
