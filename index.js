@@ -21,7 +21,7 @@ import { INKS } from './src/ornaments.mjs';
 import { readFrameImage, safeFramePath } from './src/frame-import.mjs';
 import { quickEdit } from './src/quick-edit.mjs';
 import { timelineInstruction,validateTimeline,resolveAt } from './src/timeline.mjs';
-import { el, button, notice, studio, composer, inspect, viewer, modal, mountSettings, compareVersions, confirmAction } from './src/ui.mjs';
+import { el, button, notice, studio, composer, inspect, viewer, modal, mountSettings, compareVersions, confirmAction, syncTone } from './src/ui.mjs';
 
 const KEY = 'autopic2';
 // SillyTavern: in-chat injection, depth 0, System role.
@@ -291,13 +291,14 @@ function openIllustration(index,slot) {
     if(!viewState(target,false)?.slots.includes(slot)||slot.deleted)throw new Error('대상 답변이 바뀌었습니다. 이미지를 다시 열어 주세요.');
     const ensureCurrent=()=>{if(!current(target)||slot.deleted)throw new Error('대상 답변이 바뀌었습니다. 이미지를 다시 열어 주세요.');return context().chat.indexOf(target.message);};
     const dialog=viewer(job,{
-        actions:[{label:'수정',icon:'fa-pen',close:true,run:()=>{ensureCurrent();return openQuickEdit(index,slot);}},{label:'삭제',icon:'fa-trash-can',danger:true,run:async()=>{if(await deleteIllustration(target,slot))dialog.close();}}],
+        actions:[{label:'수정',icon:'fa-pen',close:true,run:()=>{ensureCurrent();return openQuickEdit(index,slot);}},{label:'재생성',icon:'fa-rotate-right',close:true,run:()=>{ensureCurrent();return enqueue(target,[job.scene],slot.id,{...job.config,seed:-1});}}],
         more:[
             {label:'AI 검수',icon:'fa-magnifying-glass',run:()=>reviewImage(job)},
             {label:'생성 기록',icon:'fa-file-lines',run:()=>inspect(job)},
             ...(slot.versions.length>1?[{label:'버전 비교',icon:'fa-columns',run:()=>compareVersions(slot.versions,slot.selected)}]:[]),
             {label:'같은 시드로 생성',icon:'fa-rotate-right',run:()=>{ensureCurrent();return enqueue(target,[job.scene],slot.id,{...job.config,seed:job.seed});}},
             {label:'기본 시드로 저장',icon:'fa-thumbtack',run:()=>{saveSettings({...settings(),seed:job.seed});notice(`Seed ${job.seed} 저장됨`);}},
+            {label:'삭제',icon:'fa-trash-can',danger:true,run:async()=>{if(await deleteIllustration(target,slot))dialog.close();}},
         ],
     });
 }
@@ -358,7 +359,7 @@ function renderMessage(index) {
         nodes.push(figure);
     }
 }
-function scheduleRender() {clearTimeout(renderTimer);renderTimer=setTimeout(()=>{document.querySelectorAll('#chat .mes[mesid]').forEach(n=>renderMessage(Number(n.getAttribute('mesid'))));},80);}
+function scheduleRender() {syncTone();clearTimeout(renderTimer);renderTimer=setTimeout(()=>{document.querySelectorAll('#chat .mes[mesid]').forEach(n=>renderMessage(Number(n.getAttribute('mesid'))));},80);}
 let activeIllustrationPrompt = '';
 function setIllustrationPrompt(value){activeIllustrationPrompt=value;const p=ILLUSTRATION_PROMPT;context().setExtensionPrompt?.(p.key,value,p.position,p.depth,false,p.role);}
 function finalizeIllustrationPrompt(data,dryRun){

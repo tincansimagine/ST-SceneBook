@@ -28,7 +28,7 @@ export function positionEditor({model,width,height,entries,backgroundUrl,onSelec
         const list=snapshot();selected=Math.max(0,Math.min(selected,list.length-1));nodes=[];board.replaceChildren();choices.replaceChildren();
         if(safeImagePath(backgroundUrl)){const image=make('img','ap2-position-background');image.src=backgroundUrl;image.alt='';image.draggable=false;board.append(image);}
         list.forEach((e,i)=>{
-            const label=e.name||`인물 ${i+1}`,choice=make('button','menu_button ap2-button',`${i+1}. ${label}`);choice.type='button';choice.addEventListener('click',()=>{selected=i;onSelect(i);update();nodes[i].focus();});choices.append(choice);
+            const label=e.name||`인물 ${i+1}`,choice=make('button','ap2-button',`${i+1}. ${label}`);choice.type='button';choice.addEventListener('click',()=>{selected=i;onSelect(i);update();nodes[i].focus();});choices.append(choice);
             const marker=make('button','ap2-position-person',String(i+1));marker.type='button';marker.title=label;
             marker.addEventListener('focus',()=>{if(selected!==i){selected=i;onSelect(i);update();}});
             marker.addEventListener('click',()=>{selected=i;onSelect(i);update();});
@@ -45,7 +45,7 @@ export function positionEditor({model,width,height,entries,backgroundUrl,onSelec
     };
     board.addEventListener('pointerdown',e=>{if(e.target===board&&e.button===0){e.preventDefault();fromPointer(e);}});
     for(const [label,apply]of [['균등 배치',(e,i,n)=>[(i+1)/(n+1),.5]],['좌우 뒤집기',e=>[1-Number(e.x),Number(e.y)]],['중앙',()=>[.5,.5]]]){
-        const b=make('button','menu_button ap2-button',label);b.type='button';b.addEventListener('click',()=>{const list=snapshot();list.forEach((e,i)=>{if(label==='중앙'&&i!==selected)return;const p=positionPoint(...apply(e,i,list.length),model);e.set(p.x,p.y);});onMove();update();});actions.append(b);
+        const b=make('button','ap2-button',label);b.type='button';b.addEventListener('click',()=>{const list=snapshot();list.forEach((e,i)=>{if(label==='중앙'&&i!==selected)return;const p=positionPoint(...apply(e,i,list.length),model);e.set(p.x,p.y);});onMove();update();});actions.append(b);
     }
     choices.hidden=!showChoices;element.append(title,hint,choices,board,readout,actions);refresh();return{element,refresh,select(index){selected=index;update();},update};
 }

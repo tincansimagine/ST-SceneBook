@@ -18,7 +18,8 @@ export function el(tag, className = '', value = '') {
     return node;
 }
 export function button(label, action, primary = false, icon = '') {
-    const b = el('button', `menu_button menu_button_icon ap2-button${primary ? ' ap2-primary' : ''}`); b.type = 'button';
+    // No SillyTavern button classes: themes restyle those in ways that break our layouts.
+    const b = el('button', `ap2-button${primary ? ' ap2-primary' : ''}`); b.type = 'button';
     if(icon){const glyph=el('i',`fa-solid ${icon}`);glyph.setAttribute('aria-hidden','true');b.append(glyph);}
     b.append(el('span','',label));
     b.addEventListener('click', async () => {
@@ -44,10 +45,23 @@ export function actionMenu(actions,label='더 보기') {
         events?.abort();const open=panel.matches(':popover-open');trigger.setAttribute('aria-expanded',String(open));
         if(open){events=new AbortController();window.addEventListener('resize',()=>panel.hidePopover(),{signal:events.signal});}
     });
-    for(const item of actions)panel.append(button(item.label,()=>{panel.hidePopover();return item.run();},false,item.icon??''));
+    for(const item of actions){const b=button(item.label,()=>{panel.hidePopover();return item.run();},false,item.icon??'');if(item.danger)b.classList.add('ap2-danger');panel.append(b);}
     wrap.append(trigger,panel);return wrap;
 }
+// Two colours cannot be derived in CSS alone: an opaque surface (themes often use
+// a translucent tint) and a readable text colour for fills made of the text colour.
+export function syncTone() {
+    const probe=document.createElement('span');probe.style.cssText='position:absolute;visibility:hidden;color:var(--SmartThemeBodyColor,#ddd);background-color:var(--SmartThemeBlurTintColor,#222)';document.body.append(probe);
+    const style=getComputedStyle(probe),read=value=>(value.match(/[\d.]+/g)??[]).map(Number),fg=read(style.color),bg=read(style.backgroundColor);probe.remove();
+    if(fg.length<3||bg.length<3)return;
+    const light=(.299*fg[0]+.587*fg[1]+.114*fg[2])>140,root=document.documentElement.style;
+    // A light text colour means a dark theme. Keep the surface on the same side.
+    const base=light?[24,24,27]:[250,250,249],alpha=bg[3]??1,solid=bg.slice(0,3).map((v,i)=>Math.round(v*alpha+base[i]*(1-alpha)));
+    const dark=(.299*solid[0]+.587*solid[1]+.114*solid[2])<128;
+    root.setProperty('--ap2-surface-solid',`rgb(${(dark===light?solid:base).join(' ')})`);root.setProperty('--ap2-on-solid',light?'#141416':'#ffffff');
+}
 export function modal(title, subtitle = '') {
+    syncTone();
     const previous = document.activeElement;
     const dialog = el('dialog', 'ap2-dialog');
     const header = el('header', 'ap2-header'), titleBox = el('div','ap2-header-title');
@@ -70,7 +84,7 @@ export function field(label, value, options = {}) {
     } else if (options.multiline) { input = el('textarea'); input.rows = options.rows ?? 3; }
     else { input = el('input'); input.type = options.type ?? 'text'; }
     if (options.type === 'checkbox') { input.checked = !!value; wrap.classList.add('ap2-check'); }
-    else {input.value = value ?? '';input.classList.add('text_pole');}
+    else input.value = value ?? '';
     if(options.multiline)wrap.classList.add('ap2-field-wide');
     if(options.choices)wrap.classList.add('ap2-field-select');
     for (const key of ['min', 'max', 'step', 'placeholder']) if (options[key] !== undefined) input.setAttribute(key, options[key]);
@@ -412,12 +426,12 @@ export function compareVersions(versions,currentIndex){
 export function mountSettings(api,container){
     const drawer=el('div','inline-drawer');drawer.id='ap2-settings';
     const header=el('div','inline-drawer-toggle inline-drawer-header');header.tabIndex=0;header.setAttribute('role','button');header.setAttribute('aria-expanded','false');header.setAttribute('aria-controls','ap2-settings-content');
-    const label=el('b','ap2-drawer-title','씬북'),version=el('small','ap2-version','0.4.28'),status=el('small','ap2-muted','');status.id='ap2-status';label.append(version);
+    const label=el('b','ap2-drawer-title','씬북'),version=el('small','ap2-version','0.4.29'),status=el('small','ap2-muted','');status.id='ap2-status';label.append(version);
     const icon=el('div','inline-drawer-icon fa-solid fa-circle-chevron-down down');icon.setAttribute('aria-hidden','true');header.append(label,status,icon);
     const content=el('div','inline-drawer-content ap2-settings');content.id='ap2-settings-content';content.style.display='none';
     drawer.append(header,content);container.append(drawer);
     header.addEventListener('click',()=>{header.setAttribute('aria-expanded',String(header.getAttribute('aria-expanded')!=='true'));});
     header.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();header.click();}});
-    studio(api,content);
+    syncTone();studio(api,content);
     return drawer;
 }
