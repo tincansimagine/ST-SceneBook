@@ -25,7 +25,7 @@ export function charactersPage(page,{api,open,state}){
     const undo=button('되돌리기',()=>{if(!history.length)return;drafts=history.pop();render(true);},false,'fa-rotate-left');toolbar.append(undo);
     const render=(save=false)=>{undo.disabled=!history.length;list.replaceChildren();if(!drafts.length)list.append(el('p','ap2-empty','등록한 인물이 없습니다. 인물 추가를 눌러 이름과 외형을 적어 보세요.'));for(const [i,item]of drafts.entries()){
         const card=el('details','ap2-character'), f={};card.open=drafts.length===1||!item.name;const title=el('summary','',item.name||'새 인물');card.append(title);
-        for(const [key,label,multi,placeholder]of [['name','이름',false,'채팅에 나오는 이름'],['appearance','고정 외형',true,'예: girl, long pink hair, amber eyes, slender'],['outfit','기본 복장',true,'예: white dress, brown boots'],['negative','인물 제외 요소',true,'']])addField(card,f,key,label,item[key]??'',{multiline:multi,placeholder});
+        for(const [key,label,multi,placeholder]of [['name','이름',false,'채팅에 나오는 이름'],['appearance','고정 외형',true,'예: girl, long hair, pink hair, purple eyes, petite · 남자: boy, mature male, tall male, broad shoulders'],['outfit','기본 복장',true,'예: white dress, brown boots'],['negative','인물 제외 요소',true,'예: 남자가 여성스럽게 나오면 makeup, lipstick']])addField(card,f,key,label,item[key]??'',{multiline:multi,placeholder});
         addField(card,f,'player','플레이어 캐릭터',item.player,{type:'checkbox',help:'내가 연기하는 인물이면 켜세요. 1인칭 시점 설정에 쓰입니다.'});
         card.addEventListener('input',()=>{Object.assign(item,readFields(f));title.textContent=item.name||'새 인물';});
         const variants=el('details','ap2-character');variants.append(el('summary','',`다른 외형 프로필 · ${(item.profiles??[]).length}개`));

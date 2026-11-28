@@ -16,7 +16,7 @@ export function adoptEditedView(data,message,placement='end'){
         const anchor=slot.anchor;if(!anchor)continue;
         // Keep an inline picture beside its paragraph, including when that paragraph was the edited one.
         const block=anchor.quote?blocks.find(b=>b.content===anchor.quote)??blocks.find(b=>b.index===anchor.index):null;
-        slot.anchor=block?{index:block.index,quote:block.content,source}:{index:0,quote:'',source};
+        slot.anchor=block?{index:block.index,quote:block.content}:{index:0,quote:''};
     }
     if(Array.isArray(view.draft))view.draft=view.draft.map(scene=>scenePosition(scene,{blocks},placement));
     // The stored plan was already handled for this reply; an edit must not replay it.

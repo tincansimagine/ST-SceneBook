@@ -1,14 +1,15 @@
 import { parsePlanJson, JSON_OUTPUT_RULES } from './plan-json.mjs';
-import { parsePlanText } from './plan-text.mjs';
+import { parsePlanText, looksLikeLinePlan } from './plan-text.mjs';
 import { placementRule, sceneCount } from './placement-rules.mjs';
 import { pageRules, pageFormat, readPage, cutMode } from './comic.mjs';
 import { orientation } from './framing.mjs';
 import { fixViewpoint } from './viewpoint.mjs';
 import { MODELS, text, normalizeScene } from '../plugin/core.mjs';
 import { writingRule, VISIBLE_DETAIL, CAMERA_RULE, CAMERA_RULE_SHORT } from './tag-rules.mjs';
+import { readingOrder } from './prompt-order.mjs';
 import { narrativeBlocks, illustrationBlocks, scenePosition, compileCharacter } from './context.mjs';
 
-export const DEFAULT_INJECTION_PROMPT = `Each image is one frozen instant of this reply, in reading order. Pick the instant the reply builds toward (a peak of emotion, action or atmosphere) over a routine pose, and vary framing from the previous illustration. Keep clothing, actions and facts true to that instant; never mix in later actions, memories or hypothetical talk. A quiet reply still has a picture: the current interaction, posture or the established setting; a reply without new action shows the latest setting or a relevant non-explicit detail. Use only established visible facts and omit the unknown instead of inventing it. Gaze follows the scene: people look at each other or at what they are doing, at the viewer only in a pov shot or direct address. Name the visible light and weather (backlighting, window light, lantern glow, rain, mist) instead of mood words.
+export const DEFAULT_INJECTION_PROMPT = `Each image is one frozen instant of this reply, in reading order. Pick the instant the reply builds toward (a peak of emotion, action or atmosphere) over a routine pose, and vary framing from the previous illustration. Keep clothing, actions and facts true to that instant; never mix in later actions, memories or hypothetical talk. A quiet reply still has a picture: the current interaction, posture or the established setting; a reply without new action shows the latest setting or a relevant non-explicit detail. Use only established visible facts and omit the unknown instead of inventing it. Gaze follows the scene: people look at each other or at what they are doing, at the viewer only in a pov shot or direct address. Name the visible light and weather (backlighting, window light, candlelight, rain, mist) instead of mood words.
 
 Build each scene in this order:
 1. Cast: the people who must be visible and the object or contact that makes the moment readable. Keep both sides of an exchange (never drop the receiver of a handover); anonymous background activity belongs in the setting. If the cast exceeds the model limit, choose another coherent moment.
@@ -16,7 +17,7 @@ Build each scene in this order:
 3. prompt: what the whole picture shares: subject count first, then place, relevant props, time, weather and light. Turn setting-specific names into visible features. Appearance, clothes, expressions and actions belong to each character.
 4. char: the exact name from the library; its saved appearance is added automatically, so never repeat or rewrite it. profile may only name an existing profile id. For an unregistered character add appearance with the established hair, eyes, build and distinguishing traits. Names are lookup labels, not descriptions.
 5. outfit: only when the clothing differs from the saved default, as the complete visible outfit. Respect explicit clothing changes at this instant; prose that omits clothes does not remove them, and later changes never reach earlier images.
-6. action: girl, boy or other first, then posture, expression, gaze and movement. For contact name the acting hand or body part, the counterpart and the direction, and describe each side under its own character. Do not infer contact or a smile from mood alone.
+6. action: girl, boy or other first, then posture, expression, gaze and movement. For contact name the acting hand or body part, the counterpart and the direction, and describe each side under its own character. Call the counterpart another (hand on another's cheek, looking at another), never by name and never by hair, eye or clothing colour, which would leak onto this character. Do not infer contact or a smile from mood alone.
 7. pos: x, y between 0 and 1 (x left to right, y top to bottom), agreeing with the text; do not stack everyone on one spot.
 
 {{modelRule}} {{playerRule}}
@@ -45,7 +46,7 @@ Plan 1 scene (at most {{maxScenes}} when the moments clearly differ). Each scene
 - Pick the instant the reply builds toward, not a routine pose; vary framing from the previous image. Characters look at each other or at their task, not at the viewer, unless it is a pov shot.
 - prompt: subject count first, then location, relevant props, time and the concrete light and weather (backlighting, window light, rain, mist). No individual appearance.
 - char: the exact name from the library. Saved appearance is added automatically; do not repeat it. For an unregistered character add an appearance line with hair, eyes, build and distinguishing traits.
-- action: girl, boy or other first, then that character's pose, expression, gaze and contact; refer to others by a short visible feature, not a name.
+- action: girl, boy or other first, then that character's pose, expression, gaze and contact; call others another (looking at another, hand on another's shoulder), never by name and never by hair, eye or clothing colour.
 - outfit: only when clothing differs from the saved default; give the complete visible outfit.
 - pos: x, y between 0 and 1 (x left to right, y top to bottom), consistent with the text.
 {{modelRule}} {{playerRule}}
@@ -106,13 +107,26 @@ export function renderInjection(config) {
     return `<image_generation>\n${contract(usesJsonPlan(config.injectionPrompt))}\n\n${prompt}\n\n${illustrationOutputRules(config)}\n</image_generation>`;
 }
 
+// A plan body in either format. A line plan may open with "[scene 1]", which looks
+// like JSON; read as JSON it turns into empty scenes, so it is read as lines first.
+// A body that looks like JSON but holds no usable scene is tried as lines as well.
+const usableJson=value=>Array.isArray(value?.scenes)&&value.scenes.some(s=>s&&typeof s==='object'&&!Array.isArray(s)&&(String(s.prompt??'').trim()||s.characters?.length||s.panels?.length));
+function readPlanBody(body){
+    if(looksLikeLinePlan(body)||!/^[\s\\]*[{\["'“‘&]/.test(body))return parsePlanText(body);
+    let parsed,failure;
+    try{parsed=parsePlanJson(body);if(usableJson(parsed.value))return parsed;}catch(error){failure=error;}
+    try{const lines=parsePlanText(body);lines.repairs.unshift('줄 형식으로 다시 읽음');return lines;}catch{}
+    if(failure)throw failure;
+    return parsed;
+}
 // Read our marker independently of how the model wraps JSON or breaks lines.
 // Ordinary fenced code examples remain untouched.
 export function extractInjectedPlan(source) {
     source=String(source);
     // Some models fence the entire final comment, despite the output contract.
     // Unwrap only a final, comment-only block following an actual narrative.
-    const wrapped=source.match(/\n[ \t]*(`{3,}|~{3,})(?:html|json|scenebook)?[ \t]*\r?\n([ \t]*\\?(?:<!--|&lt;!--)\s*scenebook\b[\s\S]*?--(?:>|&gt;)[ \t]*)\r?\n[ \t]*\1[ \t]*$/i);
+    // Any language label: models write html, xml, text, markdown, plaintext...
+    const wrapped=source.match(/\n[ \t]*(`{3,}|~{3,})[\w+-]{0,20}[ \t]*\r?\n([ \t]*\\?(?:<!--|&lt;!--)\s*scenebook\b[\s\S]*?--(?:>|&gt;)[ \t]*)\r?\n[ \t]*\1[ \t]*$/i);
     if(wrapped&&narrativeBlocks(source.slice(0,wrapped.index)).length){
         const result=extractInjectedPlan(source.slice(0,wrapped.index)+'\n'+wrapped[2]);
         if(!result.found)return{source,found:false,value:null};
@@ -138,8 +152,8 @@ export function extractInjectedPlan(source) {
     try {
         if(raw.length>60000||blocks.length>6)throw new Error('삽화 지시의 개수나 길이가 너무 큽니다.');
         const results=blocks.map(block=>{
-            const wrapped=block.json.match(/^(`{3,}|~{3,})(?:json|text|scenebook)?\s*\n([\s\S]*?)\n\1\s*$/i);
-            const body=wrapped?wrapped[2]:block.json,parsed=/^[\s\\]*[{\["'“‘&]/.test(body)?parsePlanJson(body):parsePlanText(body);
+            const wrapped=block.json.match(/^(`{3,}|~{3,})[\w+-]{0,20}\s*\n([\s\S]*?)\n\1\s*$/i);
+            const body=wrapped?wrapped[2]:block.json,parsed=readPlanBody(body);
             if(block.escaped)parsed.repairs.unshift('주석 앞 역슬래시 제거');
             if(block.encoded)parsed.repairs.unshift('HTML 주석 표기 복구');
             return parsed;
@@ -149,12 +163,17 @@ export function extractInjectedPlan(source) {
         return{source:cleaned,found:true,value:{scenes:values.flatMap(v=>v.scenes)},raw,repairs};
     }catch(error){return{source:cleaned,found:true,value:null,raw,error:error.message};}
 }
+// A plan as it is kept with a reply: without the reply text, which the reply already holds.
+export const planRecord=plan=>{if(!plan||typeof plan!=='object')return plan;const {source,...kept}=plan;return kept;};
+// A saved plan, read against the reply it belongs to. The result always carries that
+// reply as its source: a saved plan has none of its own (or an older copy), and an
+// isolated saved comment parses to an empty body, which must never replace the reply.
 export function readStoredInjection(saved,source) {
-    if(!saved?.raw)return saved;
+    if(!saved||typeof saved!=='object')return saved;
+    const own=source===undefined?{}:{source};
+    if(!saved.raw)return{...saved,...own};
     const parsed=extractInjectedPlan(saved.raw);
-    // Parsing an isolated saved comment yields an empty body. Preserve the
-    // associated reply; this helper must never replace it with that empty body.
-    return parsed.value?{...saved,...parsed,source,raw:saved.raw,error:undefined}:saved;
+    return parsed.value?{...saved,...parsed,...own,raw:saved.raw,error:undefined}:{...saved,...own};
 }
 export function injectedScenes(value, source, config, {onInvalid} = {}) {
     if (!Array.isArray(value?.scenes) || value.scenes.length>64 || (!onInvalid && value.scenes.length > config.maxScenes)) throw new Error('주입 장면의 수가 설정과 맞지 않습니다.');
@@ -167,7 +186,7 @@ export function injectedScenes(value, source, config, {onInvalid} = {}) {
         // A page keeps its panels beside the scene; its shared prompt may be left to the layout.
         const page=pageFormat(config)!=='single'?readPage(raw,c=>compileCharacter(c,config.library,config.playerMode)):null;
         if(page&&!String(positioned.prompt??'').trim())positioned.prompt=page.layout||page.panels[0].text;
-        const scene=normalizeScene({ ...positioned, title: '', finalPrompt: false, characters: (raw.characters ?? []).map(c => compileCharacter(c, config.library, config.playerMode)).filter(Boolean) }, config.model, Math.max(1,blocks.length)),size=orientation(raw.size);
+        const scene=normalizeScene({ ...positioned, title: '', finalPrompt: false, characters: (page?(raw.characters ?? []):readingOrder(raw.characters ?? [])).map(c => compileCharacter(c, config.library, config.playerMode)).filter(Boolean) }, config.model, Math.max(1,blocks.length)),size=orientation(raw.size);
         if(size)scene.size=size;
         // A viewpoint no camera can take (lying seen from below, two lying seen from the side) becomes from above.
         scene.camera=fixViewpoint(scene).camera;

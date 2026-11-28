@@ -3,8 +3,19 @@
 // has no brackets or escapes for a model to get wrong.
 const SCENE_KEYS={camera:'camera',view:'camera',prompt:'prompt',negative:'negative',uc:'negative',quote:'evidence',evidence:'evidence',title:'ignored',layout:'layout',grid:'grid',size:'size',ratio:'size',after:'after',paragraph:'after'};
 const CHARACTER_KEYS={action:'action',outfit:'outfit',appearance:'appearance',profile:'profileId',profileid:'profileId'};
-const header=/^[\s#\[\-=*]*scene\s*\d*[\s\]:\-=*]*$/i,field=/^\s*(?:[-*]\s*)?([A-Za-z]+)\s*[:=]\s*(.*)$/;
-const clean=value=>{const v=value.trim();return v.length>1&&v.startsWith('"')&&v.endsWith('"')?v.slice(1,-1).trim():v;};
+// Models dress the keys up despite the layout: "- **prompt:** ...", "1. camera: ...",
+// "char 2: ...". The key is read through bullets, numbering and bold marks.
+const header=/^[\s#\[\-=*]*scene\s*\d*[\s\]:\-=*]*$/i,field=/^\s*(?:[-*•]\s*|\d+[.)]\s*)?\*{0,2}([A-Za-z]+)(?:[ \t]*\d+)?\*{0,2}[ \t]*[:=]\s*(.*)$/;
+const clean=value=>{const v=value.trim().replace(/^\*{1,2}\s*/,'').replace(/\s*\*{1,2}$/,'');return v.length>1&&v.startsWith('"')&&v.endsWith('"')?v.slice(1,-1).trim():v;};
+const KEYS=new Set([...Object.keys(SCENE_KEYS),...Object.keys(CHARACTER_KEYS),'char','character','name','pos','position','xy','panel','height']);
+// True when the body opens like a line plan: a scene heading or a known key.
+export function looksLikeLinePlan(input){
+    const first=String(input??'').split('\n').find(line=>line.trim()&&!/^\s*(`{3,}|~{3,})/.test(line));
+    if(!first)return false;
+    if(header.test(first))return true;
+    const key=first.match(field)?.[1].toLowerCase();
+    return !!key&&KEYS.has(key)&&!/^\s*[{\["]/.test(first);
+}
 export function parsePlanText(input){
     if(typeof input!=='string'||input.length>60000)throw new Error('삽화 지시의 길이가 너무 큽니다.');
     const scenes=[],repairs=[];let scene=null,character=null,last=null,panel=null;

@@ -23,7 +23,8 @@ export async function requestAnalysis(ctx, service, vertexRequest, profileId, pr
             return service.sendRequest(profileId,prompt,maxTokens,{extractData:true,includePreset:true,includeInstruct:options.includeInstruct!==false,stream:false,signal},auth);
         }
         const messages=Array.isArray(prompt)?structuredClone(prompt):[{role:'user',content:prompt}];
-        const payload={...auth,model:profile?.model||c.vertexai_model,messages,max_tokens:maxTokens,secret_id:profile?.['secret-id']||null,
+        // Vertex takes at most 65,536 output tokens; the server plugin refuses more.
+        const payload={...auth,model:profile?.model||c.vertexai_model,messages,max_tokens:Math.min(65536,maxTokens),secret_id:profile?.['secret-id']||null,
             temperature:c.temp_openai,top_p:c.top_p_openai,top_k:c.top_k_openai,reasoning_effort:c.reasoning_effort,use_sysprompt:c.use_sysprompt!==false,custom_prompt_post_processing:profile?.['prompt-post-processing']??c.custom_prompt_post_processing};
         return vertexRequest(payload,signal);
     }

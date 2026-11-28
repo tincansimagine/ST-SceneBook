@@ -22,7 +22,9 @@ export async function referencesPage(page,{api,open,isCurrent}){
         :`지금 모델 ${model.label}: 분위기(Vibe)와 Precise Reference 1장을 쓸 수 있습니다. 의상 참조와 여러 장 참조는 V5에서 지원합니다.`));
     const input=el('input');input.type='file';input.accept='image/png,image/jpeg,image/webp';input.multiple=true;input.hidden=true;
     const upload=button('이미지 추가',()=>input.click(),true,'fa-plus'),tools=el('div','ap2-actions'),cost=el('p','ap2-muted');cost.setAttribute('role','status');
-    tools.append(input,upload);intro.append(tools,cost);
+    // NovelAI blends several character references into one person instead of drawing each.
+    const blend=el('p','ap2-note ap2-warning');blend.setAttribute('role','status');blend.hidden=true;
+    tools.append(input,upload);intro.append(tools,cost,blend);
     input.addEventListener('change',async()=>{
         const files=[...(input.files??[])];if(!files.length)return;
         try{
@@ -90,6 +92,9 @@ export async function referencesPage(page,{api,open,isCurrent}){
         const applied=plan.filter(entry=>!entry.skip),precise=applied.filter(entry=>entry.ref.kind==='precise').length;
         cost.textContent=!applied.length?'켜 둔 참조가 없습니다. 참조 없이 그립니다.'
             :`참조 ${applied.length}장 적용 중${precise?` · 그림 한 장마다 Precise Reference ${precise}장 × 5 = ${precise*5} Anlas가 더 듭니다`:''} · 참조를 쓰는 그림은 Opus 무료 생성에 포함되지 않습니다.`;
+        const people=applied.filter(entry=>entry.ref.kind==='precise'&&['character','character&style'].includes(entry.ref.mode)).length;
+        blend.hidden=people<2;
+        blend.textContent=people<2?'':`인물 참조가 ${people}장 켜져 있습니다. NovelAI는 인물 참조 여러 장을 사람마다 따로 그리지 않고 한 사람으로 섞어 그립니다. 두 사람이 나오는 장면이면 인물 참조는 한 장만 켜고, 다른 사람은 인물 탭의 고정 외형으로 그리세요.`;
     }
     list.addEventListener('input',update);list.addEventListener('change',update);update();
     if(refs.length){

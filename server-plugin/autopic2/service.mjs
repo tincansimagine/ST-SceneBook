@@ -27,10 +27,19 @@ async function atomic(file, data) {
     await writeFile(temporary, JSON.stringify(data), { mode: 0o600 });
     await rename(temporary, file);
 }
+// Runs `work` over every item with at most `limit` running at once, keeping the order.
+async function mapLimited(items, limit, work) {
+    const results = new Array(items.length); let next = 0;
+    const lane = async () => { while (next < items.length) { const i = next++; results[i] = await work(items[i]); } };
+    await Promise.all(Array.from({ length: Math.min(limit, items.length) }, lane));
+    return results;
+}
 export class GenerationService {
     constructor({ fetchImpl = fetch, extractPng, timeoutMs = 180000 }) {
         this.fetch = fetchImpl; this.extractPng = extractPng; this.timeoutMs = timeoutMs;
         this.active = new Map(); this.cooldowns = new Map();
+        // Finished job records, per user, so the gallery does not reread every file each time.
+        this.ledgers = new Map();
     }
     async locations(directories) {
         if (typeof directories?.root !== 'string' || !directories.root || typeof directories?.userImages !== 'string' || !directories.userImages) throw new ApiError(500, 'SillyTavern 사용자 저장 경로를 읽을 수 없습니다. 씬북 서버 플러그인을 업데이트하고 서버를 재시작하세요.', 'USER_DIRECTORIES');
@@ -42,7 +51,13 @@ export class GenerationService {
     async list(directories) {
         const dirs = await this.locations(directories);
         const files = (await readdir(dirs.ledger)).filter(x => validId(x.slice(0, -5)) && x.endsWith('.json'));
-        const records = await Promise.all(files.map(async name => {
+        const cache = this.ledgers.get(dirs.user) ?? new Map(); this.ledgers.set(dirs.user, cache);
+        const present = new Set(files); for (const name of cache.keys()) if (!present.has(name)) cache.delete(name);
+        // A finished record only changes through review(), which updates the cache; the rest
+        // are read again, at most 32 files at a time so thousands of records cannot exhaust file handles.
+        const records = await mapLimited(files, 32, async name => {
+            const known = cache.get(name);
+            if (known && ['done', 'failed'].includes(known.status)) return known;
             try {
                 const r = JSON.parse(await readFile(path.join(dirs.ledger, name), 'utf8'));
                 if (r.status === 'running' && this.active.get(dirs.user)?.id !== r.id) r.status = 'uncertain';
@@ -50,16 +65,17 @@ export class GenerationService {
                     const image=await readFile(path.join(dirs.images,`${r.id}.png`)).catch(()=>null);
                     if(image&&completePng(image)){r.status='done';r.url=`/user/images/autopic2/${r.id}.png`;await atomic(path.join(dirs.ledger,name),r);}
                 }
+                cache.set(name, r);
                 return r;
-            } catch { return null; }
-        }));
+            } catch { cache.delete(name); return null; }
+        });
         return records.filter(Boolean).sort((a, b) => b.created - a.created).slice(0, 100);
     }
     async review(directories,id,review){
         if(!validId(id)||!review||typeof review.summary!=='string'||review.summary.length>4000||!Array.isArray(review.issues)||review.issues.length>20||review.issues.some(x=>typeof x!=='string'||x.length>1000))throw new ApiError(400,'검수 결과 형식을 확인하세요.');
         const dirs=await this.locations(directories),file=path.join(dirs.ledger,id+'.json');
         const record=JSON.parse(await readFile(file,'utf8'));if(record.status!=='done')throw new ApiError(409,'완성된 이미지만 검수할 수 있습니다.');
-        record.review={summary:review.summary,issues:review.issues,created:Date.now()};await atomic(file,record);return record;
+        record.review={summary:review.summary,issues:review.issues,created:Date.now()};await atomic(file,record);this.ledgers.get(dirs.user)?.set(`${id}.json`,record);return record;
     }
     async deleteReference(directories,id){
         if(!validId(id))throw new ApiError(400,'잘못된 참조 이미지 ID입니다.','INVALID_REFERENCE');

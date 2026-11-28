@@ -5,9 +5,10 @@
 // fidelity control. `precise` is the number of Precise pictures per image.
 const REFERENCES_V5 = Object.freeze({ vibe: false, precise: 8, total: 8, outfit: true, fidelity: false, strengthMax: 5, bucket: true });
 const REFERENCES_V45 = Object.freeze({ vibe: true, precise: 1, total: 4, outfit: false, fidelity: true, strengthMax: 1, bucket: false });
+// characters: distinct characters a picture can carry (NovelAI's model page: V5 up to 22, V4.5 up to 6).
 export const MODELS = Object.freeze({
-    'nai-diffusion-5-full': { label: 'V5 Full', family: 5, characters: 32, tokens: 1471, references: REFERENCES_V5, quality: 'very aesthetic, masterpiece, no text' },
-    'nai-diffusion-5-curated': { label: 'V5 Curated', family: 5, characters: 32, tokens: 703, references: REFERENCES_V5, quality: 'very aesthetic, masterpiece, no text' },
+    'nai-diffusion-5-full': { label: 'V5 Full', family: 5, characters: 22, tokens: 1471, references: REFERENCES_V5, quality: 'very aesthetic, masterpiece, no text' },
+    'nai-diffusion-5-curated': { label: 'V5 Curated', family: 5, characters: 22, tokens: 703, references: REFERENCES_V5, quality: 'very aesthetic, masterpiece, no text' },
     'nai-diffusion-4-5-full': { label: 'V4.5 Full', family: 4.5, characters: 6, tokens: 512, references: REFERENCES_V45, quality: 'location, very aesthetic, masterpiece, no text' },
     'nai-diffusion-4-5-curated': { label: 'V4.5 Curated', family: 4.5, characters: 6, tokens: 512, references: REFERENCES_V45, quality: 'location, masterpiece, no text, -0.8::feet::, rating:general' },
 });

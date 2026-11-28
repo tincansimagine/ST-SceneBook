@@ -1,4 +1,5 @@
 import { MODELS } from '../plugin/core.mjs';
+import { withoutConflicts } from './prompt-order.mjs';
 
 // Multi-panel pages: one NovelAI picture laid out as a manga or comic page.
 // Only V5 reads the sentences that describe a page and its panels well enough,
@@ -107,7 +108,7 @@ export function pageRules(config,format='text'){
     if(cutMode(config))return`${cutRules(config)}\n${pageRules({...config,pageFormat:'webtoon'},format)}`;
     const label={manga:'black and white manga page',comic:'full color comic page',webtoon:'vertical webtoon strip'}[kind];
     const fixed=pagePanels(config),counts=fixed?[fixed]:[2,3,4],count=fixed?`exactly ${fixed}`:'2 to 4';
-    const bubbles=config.speechBubbles?'A speaker\'s bubble may carry one short line from the reply in its original language: put "speech bubble, text: <line>" in that character\'s action for that panel. Never add other text.':'No speech bubbles, captions, sound effects, numbers or other text anywhere.';
+    const bubbles=config.speechBubbles?'A speaker\'s bubble may carry one short line from the reply in its original language: end that character\'s action for that panel with "speech bubble, Text: <line>" (NovelAI reads text that comes last). Never add other text.':'No speech bubbles, captions, sound effects, numbers or other text anywhere.';
     const grids=counts.flatMap(n=>PAGE_GRIDS[n].map(([id,,desc])=>`${id} (${desc})`)).join('; ');
     const layout=kind==='webtoon'
         ?'Layout: panels stack in one column from top to bottom. Give each panel a height: short for a pause, a glance or a small reaction; medium; tall for the decisive beat, a full-body action or a wide view of the place. Never make every panel the same height.'
@@ -115,7 +116,7 @@ export function pageRules(config,format='text'){
     const common=`PAGE MODE (${label}): every scene is one ${label} of ${count} panels telling this moment as a short sequence, such as approach, contact, reaction, or cause, action, result. Plan the beats first, then the panels.
 ${layout}
 Shots: give neighbouring panels a different shot distance or angle (wide, medium, close-up, extreme close-up; eye level, high angle, low angle, over the shoulder); repeat a framing only on purpose, for a two-beat reveal. Keep each person on the same side of the frame from panel to panel, and keep outfit, light and place continuous. Frame every panel so heads, hands and the key detail sit inside its borders.
-Panel text stands alone and never leans on another panel (no "again", "the same pose"): shot distance and angle, who is visible and where, the exact action and expression, the background seen in that panel, and the one detail that makes the panel, wrapped in {{ }}. Refer to people by a visible feature (the man with black hair), never by name, and say which hand touches what.
+Panel text stands alone and never leans on another panel (no "again", "the same pose"): shot distance and angle, who is visible and where, the exact action and expression, the background seen in that panel, and the one detail that makes the panel, wrapped in {{ }}. Refer to people by role, build or side (the taller man, the woman on the left), never by name and never by hair, eye or clothing colour: the panel text is shared by the whole page, so a colour there spreads to everyone; say which hand touches what.
 People: list only the people visible in that panel. Each person's action begins with how much of them the shot shows (face close-up, upper body, cowboy shot, full body), then pose, expression, gaze and contact. Their x and y place them inside that panel: 0,0 is the panel's top left corner and 1,1 its bottom right.
 ${bubbles}`;
     const height=kind==='webtoon';
@@ -151,7 +152,7 @@ export function compilePage(scene,config,{look=''}={}){
     const quality=config.quality?MODELS[config.model].quality.replace(/,?\s*no text/,config.speechBubbles?'':', no text').replace(/^,\s*/,''):'';
     const prompt=[header(format,count),config.style,scene.prompt,layoutSentence(page,format,cells),panels,quality].map(part=>String(part??'').trim()).filter(Boolean).join(', ');
     return{
-        scene:{...scene,camera:'',prompt,negative:pageNegative(format,[config.negative,scene.negative].filter(Boolean).join(', '),config.speechBubbles),finalPrompt:true,characters},
+        scene:{...scene,camera:'',prompt,negative:withoutConflicts(pageNegative(format,[config.negative,scene.negative].filter(Boolean).join(', '),config.speechBubbles),config.style),finalPrompt:true,characters},
         config:{...config,useCoords:perPanel,...pageSize(format,page,config)},
     };
 }

@@ -33,9 +33,9 @@ export function toggleCameraTag(camera,tag){
 export const LOOKS=[
     ['','사용 안 함','',''],
     ['semi','반실사','semi-realistic, detailed skin, soft shading, depth of field','flat color, chibi'],
-    ['cinema','시네마틱','cinematic lighting, dramatic shadows, depth of field, film grain, wide aspect composition','flat color, simple background'],
+    ['cinema','시네마틱','cinematic lighting, dramatic shadows, depth of field, film grain','flat color, simple background'],
     ['watercolor','수채화','watercolor (medium), traditional media, soft edges, paper texture, pastel colors','3d, photorealistic'],
-    ['manga','흑백 만화','monochrome, greyscale, manga, screentone, ink lines, high contrast','color, 3d'],
+    ['manga','흑백 만화','monochrome, greyscale, manga, screentones, ink lines, high contrast','color, 3d'],
     ['webtoon','웹툰','flat color, clean lineart, thick outlines, cel shading, vivid colors','sketch, painterly'],
     ['retro','레트로 애니','retro artstyle, 1990s (style), anime screenshot, cel shading, film grain','3d, photorealistic'],
     ['sketch','연필 스케치','sketch, graphite (medium), traditional media, rough lines, unfinished, monochrome','3d, color'],
@@ -44,6 +44,16 @@ export const LOOKS=[
     ['oil','유화','oil painting (medium), impasto, visible brushstrokes, rich colors, classical lighting','flat color, lineart'],
     ['pastel','파스텔 동화','soft pastel colors, storybook illustration, gentle lighting, rounded shapes, dreamy','dark, high contrast'],
 ];
+// Tags a look used to have. A picture drawn then still carries them in its saved
+// prompt, so they are recognised and taken out like the current ones. "wide aspect
+// composition" is not a tag NovelAI knows and pulled portrait pictures toward a wide
+// frame; NovelAI knows the screentone tag as "screentones".
+const LEGACY_LOOKS={
+    cinema:[['cinematic lighting, dramatic shadows, depth of field, film grain, wide aspect composition','flat color, simple background']],
+    manga:[['monochrome, greyscale, manga, screentone, ink lines, high contrast','color, 3d']],
+};
+// Longest first: an old tag list can begin with the current one and must be matched whole.
+const lookVariants=()=>LOOKS.flatMap(([id,,tags,exclude])=>[[id,tags,exclude],...(LEGACY_LOOKS[id]??[]).map(([t,e])=>[id,t,e])]).sort((a,b)=>b[1].length-a[1].length);
 const join=(a,b)=>[a,b].map(x=>String(x??'').trim()).filter(Boolean).join(', ');
 // Takes a built-in look back out of a rendered config: its tags from the
 // front of the main prompt and its exclusions from the end of the UC. A
@@ -53,7 +63,7 @@ export function splitLook(config){
     let style=String(config?.style??'').trim(),negative=String(config?.negative??'').trim(),look='';
     for(let found=true;found;){
         found=false;
-        for(const [id,,tags,exclude]of LOOKS){
+        for(const [id,tags,exclude]of lookVariants()){
             if(!id||(style!==tags&&!style.startsWith(`${tags}, `)))continue;
             style=style.slice(tags.length).replace(/^,\s*/,'');look||=id;found=true;
             if(negative===exclude||negative.endsWith(`, ${exclude}`))negative=negative.slice(0,negative.length-exclude.length).replace(/,\s*$/,'');

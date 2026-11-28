@@ -110,9 +110,10 @@ export function displayParagraph(nodes, anchor, sourceCount) {
 }
 export function validateAnchor(scene, context, placement='end') {
     const block = byParagraph(placement)&&context.blocks.find(b => b.index === scene.after);
-    if(block&&scene.evidence&&normalized(block.content).includes(normalized(scene.evidence)))return{index:block.index,quote:block.content,source:context.source};
+    // The reply text itself is not copied here: the view that holds the slot already keeps it.
+    if(block&&scene.evidence&&normalized(block.content).includes(normalized(scene.evidence)))return{index:block.index,quote:block.content};
     // Empty quote marks a reply-level attachment, independent of paragraphs.
-    return { index: 0, quote: '', source: context.source };
+    return { index: 0, quote: '' };
 }
 const KIND = /^\s*1?(girl|boy|other)\s*(?:,\s*|$)/i;
 function leadingKind(value) {
