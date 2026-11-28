@@ -28,7 +28,7 @@ import { timelineInstruction,validateTimeline,resolveAt } from './src/timeline.m
 import { el, button, chevron, notice, composer, inspect, modal, compareVersions, confirmAction, syncTone } from './src/ui.mjs';
 import { openViewer } from './src/viewer.mjs';
 import { activePreset, inPresetStyle } from './src/presets.mjs';
-import { readAnalysisReply, analysisLength } from './src/analysis-reply.mjs';
+import { readAnalysisReply, analysisLength, CUT_REPLY_HELP } from './src/analysis-reply.mjs';
 import { compileScene } from './src/prompt-order.mjs';
 import { fixViewpoint } from './src/viewpoint.mjs';
 import { PAGE_FORMATS, pageFormat, pagesAllowed, readPage, compilePage, cutMode, withCuts } from './src/comic.mjs';
@@ -194,7 +194,7 @@ async function analyze(target,existing=[],direction='',revisionScope='all',persi
         let timeline=null;
         if(target.config.analysisMode==='precise'&&target.snapshot.library.length&&(!existing.length||revisionScope==='all'||revisionScope==='characters')){
             const extracted=await analysisRequest(target.config,timelineInstruction(target.snapshot),Math.max(4000,analysisLength(target.config)));
-            let parsed;try{parsed=JSON.parse(String(extracted?.content??'').trim().replace(/^```(?:json)?\s*/i,'').replace(/\s*```$/,''));}catch{throw new Error('상태 추적 JSON을 해석할 수 없습니다. 빠른 모드로 조용히 바꾸지 않았습니다.');}
+            let parsed;try{parsed=JSON.parse(String(extracted?.content??'').trim().replace(/^```(?:json)?\s*/i,'').replace(/\s*```$/,''));}catch{throw new Error(`정밀 분석의 상태 추적 결과를 읽지 못했습니다. ${CUT_REPLY_HELP}`);}
             timeline=validateTimeline(parsed,target.snapshot);
         }
         const response=await analysisRequest(target.config,planInstruction(target.snapshot,target.config,existing.length?existing:null,direction),analysisLength(target.config));

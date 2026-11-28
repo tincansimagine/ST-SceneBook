@@ -249,7 +249,7 @@ function imagePage(page,{api,open}){
     const lengthMode=segmented('분석 답 길이',[['auto','자동'],['manual','직접 정하기']],c.analysisLength?'manual':'auto',value=>{lengthNumber.wrap.hidden=value!=='manual';page.dispatchEvent(new Event('input'));});
     const lengthRow=el('div','ap2-quick-shape');lengthRow.append(el('span','','분석 답 길이'),lengthMode.wrap);lengthNumber.wrap.hidden=!c.analysisLength;
     fields.analysisLength={read:()=>lengthMode.read()==='manual'?Math.min(128000,Math.max(1000,Math.round(Number(lengthNumber.read())||16000))):0};
-    analysis.append(lengthRow,lengthNumber.wrap,el('p','ap2-muted','자동은 장면 수 × 1,800 (최대 6,000)입니다. 생각하는 모델이 빈 답을 보내면 직접 정하기로 16,000 이상을 주세요.'));
+    analysis.append(lengthRow,lengthNumber.wrap,el('p','ap2-muted','자동은 16,000 토큰입니다. 생각하는 모델은 이 길이를 생각에 먼저 써서, 모자라면 결과가 잘립니다. 잘리면 직접 정하기로 24,000 이상을 주세요.'));
     analysis.append(button('마지막 답변 분석',()=>api.analyze(),false,'fa-wand-magic-sparkles'));
     saveBar(page,()=>api.saveSettings({...api.settings(),...readFields(fields)}));
     const presets=foldout(page,'프리셋 · 백업');

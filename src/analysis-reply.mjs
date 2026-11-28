@@ -26,10 +26,14 @@ export function readAnalysisReply(content){
     const brace=text.search(/\{\s*"?scenes/);if(brace>0)attempts.push(text.slice(brace));
     for(const attempt of attempts){try{const value=parsePlanJson(attempt.trim()).value;if(Array.isArray(value?.scenes))return value;}catch{}}
     try{return parsePlanText(text).value;}catch{}
-    throw new Error('분석 응답을 형식 복구 후에도 읽지 못했습니다. 기존 초안은 유지됩니다.');
+    throw new Error(`장면 분석 결과를 읽지 못했습니다. 기존 초안은 유지됩니다. ${CUT_REPLY_HELP}`);
 }
-// The reply length for scene writing: chosen by hand, or enough for the scene count.
+// The reply length for scene writing: chosen by hand, or 16,000 tokens. Thinking models
+// spend this length on their thoughts before the answer, so a short limit cuts the answer off.
+export const AUTO_ANALYSIS_LENGTH=16000;
 export function analysisLength(config){
     const chosen=Number(config.analysisLength);
-    return chosen>=1000?Math.min(128000,Math.round(chosen)):Math.min(6000,1800*config.maxScenes);
+    return chosen>=1000?Math.min(128000,Math.round(chosen)):AUTO_ANALYSIS_LENGTH;
 }
+// Said when a reply cannot be read: the usual cause and what to change.
+export const CUT_REPLY_HELP='생각(추론)하는 모델은 답 길이를 생각에 먼저 쓰기 때문에, 길이가 모자라면 결과가 중간에 잘립니다(실리태번 검은 창에 finish_reason: length). 그림 설정 → 수동 분석에서 분석 답 길이를 직접 정하기로 늘리거나(24,000 이상), 연결 프로필의 추론 수준을 낮추거나, 분석 방식을 빠르게로 바꿔 주세요.';
