@@ -518,7 +518,8 @@ function renderMessage(index) {
     for(const slot of state.slots??[]){
         if(slot.hidden||slot.deleted)continue;
         const job=slot.versions?.[slot.selected];if(!job||!safeImagePath(job.url))continue;
-        const figure=el('figure','ap2-figure');figure.style.maxWidth=`${config.compact?Math.min(360,config.displayWidth):config.displayWidth}px`;
+        // Small display: 360px at most, and two thirds of the column, so it shrinks on a phone too.
+        const figure=el('figure','ap2-figure');figure.style.maxWidth=config.compact?`min(${Math.min(360,config.displayWidth)}px, 66%)`:`${config.displayWidth}px`;
         const image=el('img');image.src=job.url;image.alt=sceneLabel(job.scene)||'삽화';image.loading='lazy';image.width=job.config.width;image.height=job.config.height;
         const imageWrap=el('div','ap2-image-wrap'),overlay=el('div','ap2-image-actions');
         overlay.setAttribute('aria-label','삽화 도구');
